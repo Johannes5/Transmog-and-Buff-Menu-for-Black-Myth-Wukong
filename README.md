@@ -48,7 +48,7 @@ The Transmog screen has a "Show" switch: every look the game has, or only the on
 
 ## Saved looks and the in-game key
 
-Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, and the tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
+Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, then your real gear (no transmog), then the first look again. The tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
 
 ## Notes
 

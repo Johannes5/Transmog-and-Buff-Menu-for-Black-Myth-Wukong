@@ -758,7 +758,7 @@ async function interactive(cfg, opts) {
         choices: [
           { name: '- back', value: '__back__' },
           { name: `+ save the current look (${outfitSummary(cfg)}) under a name`, value: '__save__' },
-          { name: `In-game key   ${cfg.hotkey}${keeperInstalled(cfg.file) ? '' : '   (needs the keeper, see Doctor)'}`, value: '__key__', description: 'Pressing it in game puts on the next saved look, in the order shown here. Examples: F7, Ctrl+F7, NUMPAD1. Slots a look leaves empty keep the previous look until the next respawn.' },
+          { name: `In-game key   ${cfg.hotkey}${keeperInstalled(cfg.file) ? '' : '   (needs the keeper, see Doctor)'}`, value: '__key__', description: 'Pressing it in game puts on the next saved look, in the order shown here, then your real gear (no transmog), then the first look again. Examples: F7, Ctrl+F7, NUMPAD1.' },
           ...cfg.saved.map((o) => ({ name: `${o.name.padEnd(24)} ${idsSummary(o.ids)}${o.ids.join(',') === cur ? '   [wearing]' : ''}`, value: o.name, description: describeOutfit(o.ids) })),
         ],
       });

@@ -979,8 +979,11 @@ namespace TransmogKeeper
             try
             {
                 if (_outfits.Count == 0) { Log("Outfit key pressed but no saved looks (keeperOutfits is empty)"); return; }
-                int cur = _outfits.FindIndex(o => o.ids.SequenceEqual(_ids));
-                var next = _outfits[(cur + 1) % _outfits.Count];
+                // the cycle is: every saved look, then "real gear" (no transmog) unless a saved look already is that
+                var cycle = new List<(string name, List<int> ids)>(_outfits);
+                if (!cycle.Any(o => o.ids.Count == 0)) cycle.Add(("real gear", new List<int>()));
+                int cur = cycle.FindIndex(o => o.ids.SequenceEqual(_ids));
+                var next = cycle[(cur + 1) % cycle.Count];
                 string line = next.ids.Count == 0 ? "0" : string.Join(",", next.ids);
                 var lines = File.ReadAllLines(ConfigPath).ToList();
                 foreach (string k in new[] { "staffTransmog", "spearTransmog" })
