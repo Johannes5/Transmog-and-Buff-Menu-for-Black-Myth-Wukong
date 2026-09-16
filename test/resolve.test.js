@@ -52,7 +52,7 @@ test('resolveTalent and resolveOutfit', () => {
 test('soaks are a buff category even without the mod list file', () => {
   const cat = loadTalentCatalog('C:/nowhere/TrueWukongConfig.txt');
   assert.equal(cat.length, SOAKS.length + 1); // + the Deathstinger venom kept buff
-  assert.ok(cat.every((t) => ['soak', 'buff'].includes(t.line) && t.category === 'Soaks' && t.description));
+  assert.ok(cat.every((t) => ['soak', 'buff'].includes(t.line) && ['Soaks', 'Weapons'].includes(t.category) && t.description));
   assert.ok(CATEGORIES.includes('Soaks'));
   assert.equal(new Set(SOAKS.map((s) => s.id)).size, 29);
   assert.ok(SOAKS.every((s) => s.id >= 2301 && s.id <= 2329));

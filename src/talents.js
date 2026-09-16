@@ -109,7 +109,7 @@ function soakEntries() {
 /** Buffs the keeper keeps on the player directly (line 'buff' -> keeperBuffs). */
 function keptBuffEntries() {
   return [
-    { id: 92313, slot: 'talent', line: 'buff', category: 'Soaks', group: null, tier: null, name: 'Deathstinger venom (your hits poison you too, no gourd needed)', kind: 'kept buff: Deathstinger\'s poison build-up is kept topped up, so the next hit you land or take puts you in the Poisoned State; no drink needed', description: 'Keeps Deathstinger\'s poison build-up on you without drinking: the next hit you land or take puts you in the Poisoned State. With the Spider Celestial Staff your heavy attacks then poison the enemy and you.', aliases: '倒马毒钩 Deathstinger venom poison self kept buff', note: 'kept buff' },
+    { id: 92313, slot: 'talent', line: 'buff', category: 'Weapons', group: null, tier: null, name: 'Venomous heavy attacks: a 4-point heavy (3 in Pillar stance) poisons you too', kind: 'the keeper watches the Focus gauge; when 3 or more points are spent at once it applies the poison build-up, so that heavy attack\'s hit poisons you as well', description: 'Changes how a full-charge heavy attack works: a 4 Focus point heavy (3 in Pillar stance) poisons you as well as the enemy. Pairs with the Spider Celestial Staff effect.', aliases: 'venomous heavy attack poison self focus stinger', note: 'venomous heavy' },
   ];
 }
 

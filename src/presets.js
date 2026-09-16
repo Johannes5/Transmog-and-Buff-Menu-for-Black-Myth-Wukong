@@ -7,7 +7,7 @@
 //   values   key:on:off triples   (on = the value while the preset is active, off = what "off" restores)
 //   key      in-game toggle key or None
 import { VALUES, valueByKey, isDefault } from './values.js';
-import { configNumber } from './config.js';
+import { configNumber, formatBuffs } from './config.js';
 
 export const PRESET_NAME_MAX = 40;
 export const validPresetName = (name) => /^[^{};=#]+$/.test(name) && name.trim() === name && name.length <= PRESET_NAME_MAX;
@@ -18,7 +18,7 @@ export const DEFAULT_PRESETS = [
   { name: 'Defence +40%', talents: [], soaks: [], buffs: [], values: { defenseMultiplier: ['14E-1', '1'] }, key: 'None' },
   { name: 'Defence +20%', talents: [], soaks: [], buffs: [], values: { defenseMultiplier: ['12E-1', '1'] }, key: 'None' },
   { name: 'Mana Regen', talents: [], soaks: [], buffs: [], values: { manaRegen: ['4', '0'] }, key: 'None' },
-  // Spider Celestial Staff + Centipede 2-piece + Deathstinger venom (poisons you on your next hit, no gourd needed)
+  // Spider Celestial Staff + Centipede 2-piece + venomous heavy attacks (a full-charge heavy poisons you too)
   { name: 'Stinger', talents: [105013, 901411], soaks: [], buffs: [92313], values: {}, key: 'None' },
 ];
 
@@ -37,7 +37,7 @@ export function parsePresets(text) {
       const k = part.slice(0, eq).trim(), v = part.slice(eq + 1).trim();
       if (k === 'talents') p.talents = ids(v);
       else if (k === 'soaks') p.soaks = ids(v);
-      else if (k === 'buffs') p.buffs = ids(v);
+      else if (k === 'buffs') p.buffs = ids(v.replace(/@[a-z]+/gi, ''));
       else if (k === 'key') p.key = v || 'None';
       else if (k === 'values') {
         for (const triple of v.split(',')) {
@@ -58,7 +58,7 @@ export function formatPresets(list) {
     const parts = [];
     if (p.talents.length) parts.push(`talents=${p.talents.join(',')}`);
     if (p.soaks.length) parts.push(`soaks=${p.soaks.join(',')}`);
-    if (p.buffs?.length) parts.push(`buffs=${p.buffs.join(',')}`);
+    if (p.buffs?.length) parts.push(`buffs=${formatBuffs(p.buffs)}`);
     const vals = Object.entries(p.values).map(([k, [on, off]]) => `${k}:${on}:${off}`);
     if (vals.length) parts.push(`values=${vals.join(',')}`);
     if (p.key && p.key !== 'None') parts.push(`key=${p.key}`);

@@ -74,7 +74,10 @@ namespace TransmogKeeper
         private readonly List<(string name, List<int> ids)> _outfits = new List<(string, List<int>)>();
         private readonly List<int> _soaks = new List<int>();                 // keeperSoaks: soaks applied on gourd drinks
         private readonly List<int> _keptBuffs = new List<int>();             // keeperBuffs: buff IDs re-added whenever missing
+        private readonly List<int> _heavyBuffs = new List<int>();            // keeperBuffs "id@heavy": added when a 3+ point Focus spend is seen
         private readonly Dictionary<int, DateTime> _keptBuffNext = new Dictionary<int, DateTime>();
+        private APawn _pawnRef;                                               // the player pawn seen by the last Tick
+        private float _focusPrev = -1f;                                       // Focus gauge value at the last fast poll
         private readonly Dictionary<int, DateTime> _soakNext = new Dictionary<int, DateTime>();
         private const double SoakRetrySeconds = 5;                            // re-trigger an instant/expired soak effect this often
         private string _hotkeyText = "F7"; // default when keeperOutfitKey is missing
@@ -109,11 +112,23 @@ namespace TransmogKeeper
 
         private async Task Loop(CancellationToken token)
         {
+            const int fastMs = 100; // the Focus poll needs to catch a heavy attack's spend before its hit lands
+            int elapsed = 0;
             while (!token.IsCancellationRequested)
             {
-                try { Utils.TryRunOnGameThread(Tick); }
-                catch (Exception e) { Log("loop error: " + e.Message); }
-                try { await Task.Delay(TickMs, token); } catch (TaskCanceledException) { }
+                if (elapsed >= TickMs)
+                {
+                    elapsed = 0;
+                    try { Utils.TryRunOnGameThread(Tick); }
+                    catch (Exception e) { Log("loop error: " + e.Message); }
+                }
+                else if (_heavyBuffs.Count > 0 && _pawnRef != null)
+                {
+                    try { Utils.TryRunOnGameThread(PollFocus); }
+                    catch (Exception e) { LogOnce("poll error: " + e.Message); }
+                }
+                try { await Task.Delay(_heavyBuffs.Count > 0 ? fastMs : TickMs, token); } catch (TaskCanceledException) { }
+                elapsed += _heavyBuffs.Count > 0 ? fastMs : TickMs;
             }
         }
 
@@ -132,7 +147,8 @@ namespace TransmogKeeper
                 APawn pawn = GetControlledPawn();
                 if (pawn == null) return;
                 string name = pawn.GetName();
-                if (!name.Contains("Unit_Player_Wukong")) return; // transformed / not the monkey
+                if (!name.Contains("Unit_Player_Wukong")) { _pawnRef = null; return; } // transformed / not the monkey
+                _pawnRef = pawn;
 
                 IBUC_EquipData data = BGU_DataUtil.GetReadOnlyData<IBUC_EquipData, BUC_EquipData>(pawn);
                 if (data == null || data.MapEquip == null) return;
@@ -461,6 +477,43 @@ namespace TransmogKeeper
             }
         }
         private readonly HashSet<int> _keptLogged = new HashSet<int>();
+
+        /** "92313,92200@heavy" -> plain kept buffs and "@heavy" buffs (added on a 3+ point Focus spend). */
+        private static void ParseBuffTokens(string value, List<int> kept, List<int> heavy)
+        {
+            foreach (string raw in (value ?? "").Split(','))
+            {
+                string part = raw.Trim();
+                if (part.Length == 0) continue;
+                string mode = "";
+                int at = part.IndexOf('@');
+                if (at >= 0) { mode = part.Substring(at + 1).Trim().ToLowerInvariant(); part = part.Substring(0, at).Trim(); }
+                int id;
+                if (!int.TryParse(part, out id) || id <= 0) continue;
+                if (mode == "heavy") { if (!heavy.Contains(id)) heavy.Add(id); }
+                else if (!kept.Contains(id)) kept.Add(id);
+            }
+        }
+
+        // Every 100 ms while an "@heavy" buff is configured: a drop of 3+ Focus points in one step is a
+        // charged heavy attack being unleashed (4 points, or 3 in Pillar stance); add the buffs right then,
+        // so the hit that follows lands with them (e.g. Deathstinger's build-up -> Poisoned on that hit).
+        private void PollFocus()
+        {
+            try
+            {
+                var pawn = _pawnRef;
+                if (pawn == null || _heavyBuffs.Count == 0) return;
+                float cur = Get(pawn, Focus);
+                float prev = _focusPrev;
+                _focusPrev = cur;
+                if (prev < 0f) return;
+                if (prev - cur < 290f) return; // less than 3 points spent (light attacks, decay, a 1- or 2-point heavy)
+                foreach (int id in _heavyBuffs) BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, id, (EBuffSourceType)40, 0f);
+                Log($"Heavy attack with {Math.Round(prev / 100f, 1)} Focus points: buff {string.Join(",", _heavyBuffs)} added");
+            }
+            catch (Exception e) { LogOnce("focus poll error: " + e.Message); }
+        }
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
 
@@ -808,6 +861,7 @@ namespace TransmogKeeper
             _soaks.Clear();
             _soakNext.Clear();
             _keptBuffs.Clear();
+            _heavyBuffs.Clear();
             _keptBuffNext.Clear();
             _presets.Clear();
             _lastPawn = "";       // force a re-check of the look
@@ -833,7 +887,7 @@ namespace TransmogKeeper
                     else if (key == "keeperOutfits") ParseOutfits(value);
                     else if (key == "keeperPresets") ParsePresets(value);
                     else if (key == "keeperSoaks") ParseIds(value, _soaks);
-                    else if (key == "keeperBuffs") ParseIds(value, _keptBuffs);
+                    else if (key == "keeperBuffs") ParseBuffTokens(value, _keptBuffs, _heavyBuffs);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
                     else
                     {
@@ -872,7 +926,7 @@ namespace TransmogKeeper
             public string Name;
             public readonly List<int> Talents = new List<int>();
             public readonly List<int> Soaks = new List<int>();
-            public readonly List<int> Buffs = new List<int>();
+            public readonly List<string> Buffs = new List<string>();          // tokens "id" or "id@heavy", as in keeperBuffs
             public readonly List<(string key, string on, string off)> Values = new List<(string, string, string)>();
             public string Key = "None";
         }
@@ -893,7 +947,7 @@ namespace TransmogKeeper
                     string k = part.Substring(0, eq).Trim(), v = part.Substring(eq + 1).Trim();
                     if (k == "talents") ParseIds(v, p.Talents);
                     else if (k == "soaks") ParseIds(v, p.Soaks);
-                    else if (k == "buffs") ParseIds(v, p.Buffs);
+                    else if (k == "buffs") foreach (string tok in v.Split(',')) { string s = tok.Trim(); if (s.Length > 0 && !p.Buffs.Contains(s)) p.Buffs.Add(s); }
                     else if (k == "key") p.Key = v.Length == 0 ? "None" : v;
                     else if (k == "values")
                         foreach (string triple in v.Split(','))
@@ -956,13 +1010,14 @@ namespace TransmogKeeper
                 Action<string, string> set = (k, v) => { int i = lines.FindIndex(x => x.StartsWith(k + " =")); if (i >= 0) lines[i] = $"{k} = {v}"; else lines.Add($"{k} = {v}"); };
                 var talents = new List<int>(); ParseIds(get("addTalents"), talents);
                 var soaks = new List<int>(); ParseIds(get("keeperSoaks"), soaks);
-                var kept = new List<int>(); ParseIds(get("keeperBuffs"), kept);
-                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains) && p.Buffs.All(kept.Contains)
+                var kept = get("keeperBuffs").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0 && s != "0").ToList();
+                Func<string, string> idOf = tok => tok.Split('@')[0].Trim();
+                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains) && p.Buffs.All(b => kept.Any(k => idOf(k) == idOf(b)))
                     && p.Values.All(v => { float cur, want; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.on, NumberStyles.Float, CultureInfo.InvariantCulture, out want) && Math.Abs(cur - want) < 1e-4f; });
                 bool turnOn = !on;
                 foreach (int id in p.Talents) { if (turnOn) { if (!talents.Contains(id)) talents.Add(id); } else talents.Remove(id); }
                 foreach (int id in p.Soaks) { if (turnOn) { if (!soaks.Contains(id)) soaks.Add(id); } else soaks.Remove(id); }
-                foreach (int id in p.Buffs) { if (turnOn) { if (!kept.Contains(id)) kept.Add(id); } else kept.Remove(id); }
+                foreach (string b in p.Buffs) { kept.RemoveAll(k => idOf(k) == idOf(b)); if (turnOn) kept.Add(b); }
                 foreach (var v in p.Values) set(v.key, turnOn ? v.on : v.off);
                 if (p.Talents.Count > 0) set("addTalents", talents.Count == 0 ? "0" : string.Join(",", talents));
                 if (p.Soaks.Count > 0) set("keeperSoaks", soaks.Count == 0 ? "0" : string.Join(",", soaks));

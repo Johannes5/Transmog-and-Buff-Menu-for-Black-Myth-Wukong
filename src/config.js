@@ -9,7 +9,10 @@ export const CONFIG_REL = path.join('b1', 'Binaries', 'Win64', 'CSharpLoader', '
 export const KEYS = { staff: 'staffTransmog', spear: 'spearTransmog' };
 export const TALENT_KEY = 'addTalents';
 export const PRESETS_KEY = 'keeperPresets';   // named buffs "Name{talents=..;soaks=..;values=k:on:off;key=F8};..." (TransmogKeeper v1.7+ toggles by key)
-export const BUFFS_KEY = 'keeperBuffs';      // TransmogKeeper v1.7+: buff IDs re-added whenever missing ("kept buffs")
+export const BUFFS_KEY = 'keeperBuffs';      // TransmogKeeper v1.7+: kept buffs "id" (re-added whenever missing) or "id@heavy" (added on a 3+ point heavy attack)
+/** Mode per kept buff ID; written as "id@mode" so the keeper knows when to add it. */
+export const KEPT_BUFF_MODES = { 92313: 'heavy' };
+export const formatBuffs = (ids) => (ids.length ? ids.map((id) => (KEPT_BUFF_MODES[id] ? `${id}@${KEPT_BUFF_MODES[id]}` : String(id))).join(',') : '0');
 export const SOAKS_KEY = 'keeperSoaks';      // TransmogKeeper v1.6+: soak item IDs whose gourd effect is kept active
 export const RECENT_KEY = 'recentBuffs';     // tool only: buffs removed lately, newest first (the menu offers to reactivate them)
 export const RECENT_VALUES_KEY = 'recentValues';  // tool only: values reset lately "key:value;key:value", newest first
@@ -114,7 +117,7 @@ export function readConfig(file) {
     talents: parseIds(values[TALENT_KEY]),
     recent: parseIds(values[RECENT_KEY]),
     soaks: parseIds(values[SOAKS_KEY]),
-    buffs: parseIds(values[BUFFS_KEY]),
+    buffs: parseIds(String(values[BUFFS_KEY] ?? '').replace(/@[a-z]+/gi, '')),
     presets: parsePresets(values[PRESETS_KEY]),
     hasPresetsLine: values[PRESETS_KEY] !== undefined,
     recentValues: parseRecentValues(values[RECENT_VALUES_KEY]),
@@ -159,7 +162,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs
   }
   if (talents) setIds(TALENT_KEY, talents, 'talents activated on the player');
   if (presets) setLine(PRESETS_KEY, formatPresets(presets), 'named buffs: Name{talents=ids;soaks=ids;values=key:on:off;key=F8} (see wukong-transmog presets)');
-  if (buffs) setIds(BUFFS_KEY, buffs, 'TransmogKeeper only: buff IDs re-added whenever they are missing (see wukong-transmog buffs)');
+  if (buffs) setLine(BUFFS_KEY, formatBuffs(buffs), 'TransmogKeeper only: kept buffs, "id" = re-added whenever missing, "id@heavy" = added on a 3+ point heavy attack (see wukong-transmog buffs)');
   if (soaks) setIds(SOAKS_KEY, soaks, 'TransmogKeeper only: soaks (gourd additives) whose effect is kept active as if just drunk');
   if (recent) setIds(RECENT_KEY, recent, 'Transmog & Buff Tool only: buffs removed lately (the menu offers to reactivate them)');
   if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);
