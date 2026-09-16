@@ -47,7 +47,8 @@ After saving, press **Ctrl+Enter** in game to reload the mod config (or restart 
 ## Saved looks and the in-game key (keeperOutfits, keeperOutfitKey)
 
 `keeperOutfits = Name=ids;Name=ids` keeps named ID lists in the config; `keeperOutfitKey = F7`
-(or `Ctrl+F7`, `Shift+Alt+O`, `None`; key names as in TrueWukong-KeybindList.txt) is the key
+(the default when the line is missing; or `Ctrl+F7`, `Shift+Alt+O`, `None` = off; key names as in
+TrueWukong-KeybindList.txt) is the key
 TransmogKeeper v1.5+ registers through the loader's `Utils.RegisterKeyBind`. Pressing it picks the
 saved look after the one whose IDs equal the current `staffTransmog` (wrapping around), writes it
 into `staffTransmog` / `spearTransmog` itself and applies it at once, so the CLI and the game

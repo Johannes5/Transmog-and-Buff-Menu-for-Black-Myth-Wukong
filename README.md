@@ -3,7 +3,7 @@
 Wear any look, use any effect. A menu-driven tool for Black Myth: Wukong that lets you:
 
 - **Transmog**: put any armor set, staff or gourd look on top of your real gear. Stats stay as they are.
-- **Saved looks**: keep several looks by name and cycle through them in game with one key.
+- **Saved looks**: keep several looks by name and cycle through them in game with one key (F7 by default).
 - **Buffs**: activate any set bonus, armor piece effect, staff effect or curio without owning the gear, on any outfit. Every buff shows its in-game description.
 - **Values**: regeneration, move speed, attack and defense multipliers.
 
@@ -40,7 +40,7 @@ Command line equivalents: `wukong-transmog show | list | set | outfits | buffs |
 
 ## Saved looks and the in-game key
 
-Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and set an **in-game key** (for example `F7` or `Ctrl+F7`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, and the tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
+Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, and the tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
 
 ## Notes
 

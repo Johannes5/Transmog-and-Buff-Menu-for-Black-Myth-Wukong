@@ -52,7 +52,7 @@ test('readConfig decodes every line the tool owns', () => {
   assert.deepEqual(cfg.attrs, [{ name: 'MpMax', value: 600 }, { name: 'HpMax', value: 1000 }]);
   assert.equal(cfg.values.wukongSpeed, '12E-1');
   assert.deepEqual(cfg.saved, []);
-  assert.equal(cfg.hotkey, 'None');
+  assert.equal(cfg.hotkey, 'F7'); // default when the line is missing
 });
 
 test('writeConfig replaces only the given lines, keeps the rest and the line endings', () => {

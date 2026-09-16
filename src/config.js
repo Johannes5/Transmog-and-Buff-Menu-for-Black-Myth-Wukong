@@ -10,6 +10,7 @@ export const TALENT_KEY = 'addTalents';
 export const ATTR_KEY = 'keeperAttr';
 export const OUTFITS_KEY = 'keeperOutfits';   // "Name=id,id;Other name=id,id"  saved looks (TransmogKeeper v1.5+ cycles them)
 export const HOTKEY_KEY = 'keeperOutfitKey';  // "F7", "Ctrl+F7", "None"        key that puts on the next saved look in game
+export const DEFAULT_HOTKEY = 'F7';           // used when the line is missing (F7 is free: the patcher unbinds the mod's F4-F9 debug keys)
 export const BACKUPS_KEPT = 30;
 
 /** Config number back to a readable one: "12E-1" -> "1.2". */
@@ -101,7 +102,7 @@ export function readConfig(file) {
     talents: parseIds(values[TALENT_KEY]),
     attrs: parseAttrLine(values[ATTR_KEY]),
     saved: parseOutfits(values[OUTFITS_KEY]),
-    hotkey: values[HOTKEY_KEY] && values[HOTKEY_KEY] !== '0' ? values[HOTKEY_KEY] : 'None',
+    hotkey: values[HOTKEY_KEY] === undefined || values[HOTKEY_KEY] === '' ? DEFAULT_HOTKEY : values[HOTKEY_KEY] === '0' ? 'None' : values[HOTKEY_KEY],
   };
 }
 

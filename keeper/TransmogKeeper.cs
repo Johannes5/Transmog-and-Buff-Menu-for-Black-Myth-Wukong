@@ -70,7 +70,7 @@ namespace TransmogKeeper
         private readonly Dictionary<string, bool> _bool = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly List<(EBGUAttrFloat attr, float value)> _attrs = new List<(EBGUAttrFloat, float)>();
         private readonly List<(string name, List<int> ids)> _outfits = new List<(string, List<int>)>();
-        private string _hotkeyText = "None";
+        private string _hotkeyText = "F7"; // default when keeperOutfitKey is missing
         private CSharpModBase.Input.HotKeyItem _hotkey;
         private DateTime _configStamp = DateTime.MinValue;
         private string _lastPawn = "";
@@ -442,6 +442,7 @@ namespace TransmogKeeper
             _bool.Clear();
             _attrs.Clear();
             _lastPawn = "";       // force a re-check of the look
+            _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
             _lastSpeedPawn = "";  // re-apply speed
             _talentTries.Clear();
             try
