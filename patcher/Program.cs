@@ -243,6 +243,22 @@ int applied = 0;
     applied++;
 }
 
+// ---- 9. no reactions to buffs (fire projectiles, sage helpers, ...) ---------
+// ScanBuffWhenCast is a prefix on GSDel_BuffAdd.Invoke that reacts to certain player buffs by adding
+// buffs, shooting projectiles and hooking the mod's Sage helpers. Nothing the tool needs lives there,
+// so the prefix now just lets the original run (returns true).
+{
+    var sbc = main.Methods.First(m => m.Name == "ScanBuffWhenCast");
+    var il = sbc.Body.GetILProcessor();
+    sbc.Body.Instructions.Clear();
+    sbc.Body.ExceptionHandlers.Clear();
+    sbc.Body.Variables.Clear();
+    il.Emit(OpCodes.Ldc_I4_1);
+    il.Emit(OpCodes.Ret);
+    Console.WriteLine("[9] Buff reactions disabled (ScanBuffWhenCast prefix always runs the original)");
+    applied++;
+}
+
 // ---- 6. marker so the tool can tell a patched DLL without the .orig --------
 {
     const string marker = "TransmogTool-patched";
