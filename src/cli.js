@@ -598,7 +598,8 @@ async function interactive(cfg, opts) {
   // A lone Esc keypress aborts the current prompt and the wrapper returns the "back" answer.
   const escapable = (prompt, onEsc) => async (config, opts = {}) => {
     const ac = new AbortController();
-    const onKey = (_s, key) => { if (key?.name === 'escape' && !key.ctrl && !key.meta) ac.abort(); };
+    // a lone Esc is reported with meta: true by readline, so only ctrl is excluded
+    const onKey = (_s, key) => { if (key?.name === 'escape' && !key.ctrl) ac.abort(); };
     readline.emitKeypressEvents(process.stdin);
     process.stdin.on('keypress', onKey);
     try { return await prompt(config, { ...opts, signal: ac.signal }); }
