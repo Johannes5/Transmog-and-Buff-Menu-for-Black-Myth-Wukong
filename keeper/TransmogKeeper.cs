@@ -189,7 +189,7 @@ namespace TransmogKeeper
 
         private void KeepLook(APawn pawn, string name, IBUC_EquipData data)
         {
-            if (_ids.Count == 0) return;
+            // (no early return for an empty list: with no transmog every slot must show the real gear)
             if (name == _lastPawn && (DateTime.UtcNow - _lastApply).TotalSeconds < CooldownSeconds) return;
 
             // While the game has an "illusion" override active (a buff temporarily replacing a
