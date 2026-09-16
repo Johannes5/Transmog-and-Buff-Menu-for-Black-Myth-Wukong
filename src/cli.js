@@ -606,7 +606,7 @@ async function interactive(cfg, opts) {
     finally { process.stdin.off('keypress', onKey); }
   };
   const select = escapable(raw.select, '__back__');
-  const search = escapable(raw.search, '__back__');
+  const search = escapable((await import('./prompt-pick.js')).pick, '__back__');
   const input = escapable(raw.input, '');
   const confirm = escapable(raw.confirm, false);
   const allTiers = !!opts['all-tiers'];
@@ -619,11 +619,13 @@ async function interactive(cfg, opts) {
     return a === '' ? null : a;
   };
 
-  // Arrow-key list. Typing filters it; leaving it empty shows everything.
-  const pickFrom = async (message, items, extra = []) =>
+  // Arrow-key list. Typing filters it; leaving it empty shows everything. With `onApply`, the right
+  // arrow or Shift+Enter applies the highlighted entry and keeps the list open (try looks on in a row).
+  const pickFrom = async (message, items, extra = [], onApply) =>
     search({
       message,
       pageSize: 18,
+      onApply,
       source: (term) => {
         const hits = items.filter((i) => matches(i, term));
         const choices = hits.map((i) => ({
@@ -663,10 +665,11 @@ async function interactive(cfg, opts) {
   async function menuTransmog() {
     // Work on one outfit and always write it to both grips, so Tab never changes the look.
     const outfit = idsToOutfit(cfg.outfits.staff).outfit;
-    const save = () => {
+    // quiet = no console output (used while a list prompt is still on screen)
+    const save = (quiet = false) => {
       const ids = outfitToIds(outfit);
       writeConfig(cfg, { staff: ids, spear: ids }, { backup });
-      saved();
+      if (!quiet) saved();
     };
     const current = (slot) => (outfit[slot] ? itemById(outfit[slot]).name : 'real gear');
     for (;;) {
@@ -700,26 +703,36 @@ async function interactive(cfg, opts) {
         continue;
       }
       if (action === 'set') {
+        const applySet = (key, quiet = false) => {
+          if (key === '__back__') return;
+          for (const slot of ['head', 'body', 'arms', 'legs']) outfit[slot] = null;
+          Object.assign(outfit, setPieces(key));
+          save(quiet);
+        };
         const setKey = await pickFrom(
           'Turn my armor into which set?',
           sets().map((s) => ({ id: s.key, name: shortName(s.name) + (s.fixedTier !== undefined ? ' (Mythical look)' : ''), note: setPieceNames(s) + (s.note ? '. ' + s.note : ''), aliases: (s.aliases ?? '') + ' ' + s.name + ' ' + setPieceNames(s) })),
           [{ name: '- back', value: '__back__' }],
+          (key) => { applySet(key, true); return key === '__back__' ? '' : `wearing: ${shortName(sets().find((s) => s.key === key)?.name ?? key)} (still in the list)`; },
         );
         if (setKey === '__back__') continue;
-        for (const slot of ['head', 'body', 'arms', 'legs']) outfit[slot] = null;
-        Object.assign(outfit, setPieces(setKey));
-        save();
+        applySet(setKey);
         continue;
       }
       const slot = action;
+      const applySlot = (id, quiet = false) => {
+        if (id === '__back__') return;
+        outfit[slot] = id;
+        save(quiet);
+      };
       const chosen = await pickFrom(
         `Turn my ${SLOT_LABEL[slot].toLowerCase()} into:`,
         pool.filter((i) => i.slot === slot),
         [{ name: '- back (keep as is)', value: '__back__' }, { name: '- real gear (no transmog in this slot)', value: null }],
+        (id) => { applySlot(id, true); return id === '__back__' ? '' : `wearing: ${id === null ? 'real gear' : itemById(id).name} (still in the list)`; },
       );
       if (chosen === '__back__') continue;
-      outfit[slot] = chosen;
-      save();
+      applySlot(chosen);
     }
   }
 

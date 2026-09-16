@@ -27,6 +27,7 @@
     "transmog-buff-tool": "./src/cli.js"
   },
   "dependencies": {
+    "@inquirer/core": "^12.0.3",
     "@inquirer/prompts": "^8.7.2"
   }
 }
