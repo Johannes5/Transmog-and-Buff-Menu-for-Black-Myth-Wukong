@@ -5,7 +5,7 @@ Wear any look, use any effect. A menu-driven tool for Black Myth: Wukong that le
 - **Transmog**: put any armor set, staff or gourd look on top of your real gear. Stats stay as they are.
 - **Saved looks**: keep several looks by name and cycle through them in game with one key (F7 by default).
 - **Buffs**: activate any set bonus, armor piece effect, staff effect, curio or gourd soak without owning it, on any outfit. Every buff shows its in-game description.
-- **Values**: regeneration, move speed, attack and defense multipliers.
+- **Custom buffs**: regeneration, move speed, attack and defense multipliers and more. Every value shows its default and can be reset with one keystroke; reset values stay under "recently active" so you can put them back.
 
 Pick everything by name with the arrow keys. Every change is backed up and can be undone from the menu.
 
@@ -29,11 +29,11 @@ Already have True Wukong or CSharpLoader installed? The installer replaces them 
 
 ```
 Transmog   change how my gear looks (armor set, single slots, saved looks, in-game key)
-Buffs      set bonuses, piece effects, weapon effects and curios I don't own
-Values     regeneration, speed, attack, defense
+Buffs      one list of everything active: set bonuses, piece and weapon effects, curios, soaks,
+           and custom buffs (value changes such as regen, speed, attack, defense; attribute locks)
 Undo       restore an earlier change
 Doctor     check the install and the logs when something does not work
-Options    trainer compatibility, attribute locks, game folder, status, uninstall
+Options    trainer compatibility, game folder, status, uninstall
 ```
 
 Command line equivalents: `wukong-transmog show | list | set | outfits | buffs | values | undo | doctor | mod | uninstall`. Run `wukong-transmog help`.
@@ -44,7 +44,7 @@ Under Transmog > Saved looks you can save the current look under a name, put a s
 
 ## Notes
 
-**Changing values.** Transmog and buffs apply within a second while the keeper is installed (it is, by default), otherwise with Ctrl+Enter. Attack and defense multipliers take effect at the next respawn (shrine rest, transformation or reload). When you add or remove a buff while a save is loaded, the tool watches the game for a few seconds and shows which attributes moved.
+**Changing values.** Transmog, buffs and value changes apply within a second while the keeper is installed (it is, by default): the keeper also makes the mod re-read its config, so you never need Ctrl+Enter. Attack and defense multipliers take effect at the next respawn (shrine rest, transformation or reload). When you add or remove a buff while a save is loaded, the tool watches the game for a few seconds and shows which attributes moved.
 
 **Soaks.** The Soaks category keeps a soak's effect on as if you had just drunk from the gourd: the keeper re-triggers it whenever it runs out. Effects that only matter during the sip itself (extra healing, uninterruptible drinking) are listed but do little outside drinking; effects that happen once per sip (Focus, Mana) repeat every few seconds. Soaks need the keeper.
 

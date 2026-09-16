@@ -20,7 +20,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { catalog, sets, setPieces, setPieceNames, itemById, slotOf, matches, SLOTS, SLOT_LABEL } from './data.js';
 import { loadTalentCatalog, talentById, formatTalent, fullName, groupsOf, CATEGORIES } from './talents.js';
-import { VALUES, VALUE_GROUPS, ATTRS, valueByKey, attrByName, formatAttrLine, readAttrSnapshot, LIVE_BARS, fmtNum } from './values.js';
+import { VALUES, VALUE_GROUPS, ATTRS, valueByKey, attrByName, formatAttrLine, readAttrSnapshot, LIVE_BARS, fmtNum, isDefault } from './values.js';
 import { hasPayload, installInto, uninstallFrom, findGameDirs, isGameDir, isInstalled, needsUpdate, payloadVersion, gameRunning, gameExeStamp } from './install.js';
 import { readSettings, writeSettings } from './settings.js';
 import {
@@ -122,8 +122,9 @@ const VERSION = (() => {
 })();
 
 /** One consistent line after every save. */
-function savedLine(cfg) {
-  return keeperInstalled(cfg.file) ? 'Saved. Applies in game within a second.' : 'Saved. Press Ctrl+Enter in game (or reload the save).';
+function savedLine(cfg, value) {
+  const respawn = value && /Multiplier/.test(value.key) ? ' Attack/defense multipliers take effect at the next respawn (shrine, transformation or reload).' : '';
+  return keeperInstalled(cfg.file) ? 'Saved. Applies in game within a second.' + respawn : 'Saved. Press Ctrl+Enter in game (or reload the save).' + respawn;
 }
 
 /** Everything the Buffs screen treats as active: talents (addTalents) and soaks (keeperSoaks). */
@@ -382,11 +383,12 @@ function cmdValues(cfg, opts) {
     const [key, value] = opts._.slice(2);
     const v = valueByKey(key);
     if (!v) throw new Error(`Unknown value "${key}". Keys: ${VALUES.map((x) => x.key).join(', ')}`);
-    if (value === undefined || !Number.isFinite(parseFloat(value))) throw new Error(`usage: wukong-transmog values set ${v.key} <number>`);
-    writeConfig(cfg, {}, { backup: !opts['no-backup'], values: { [v.key]: configNumber(value) } });
-    console.log(`Written to ${cfg.file}\n  ${v.key} = ${configNumber(value)}   ${v.label}   [${v.applies.join(', ')}]`);
+    const reset = /^(default|reset)$/i.test(value ?? '');
+    if (!reset && (value === undefined || !Number.isFinite(parseFloat(value)))) throw new Error(`usage: wukong-transmog values set ${v.key} <number|default>`);
+    writeConfig(cfg, {}, { backup: !opts['no-backup'], values: { [v.key]: reset ? v.def : configNumber(value) } });
+    console.log(`Written to ${cfg.file}\n  ${v.key} = ${cfg.values[v.key]}   ${v.label}   [${v.applies.join(', ')}]   (default ${showNumber(v.def)})`);
     if (!v.applies.includes('lite') && trainerMode(cfg.file)) console.log('  Note: this value is off while Trainer compatibility is on.');
-    else console.log('  ' + savedLine(cfg));
+    else console.log('  ' + savedLine(cfg, v));
     return;
   }
   if (sub === 'attr') {
@@ -587,18 +589,16 @@ async function interactive(cfg, opts) {
       pageSize: 8,
       choices: [
         { name: `Transmog   change how my gear looks          (now: ${outfitSummary(cfg)})`, value: 'transmog' },
-        { name: `Buffs      set bonuses and weapon effects I don't own   (${activeBuffIds(cfg).length} active)`, value: 'buffs' },
-        { name: 'Values     regeneration, speed, attack, defense', value: 'values' },
+        { name: `Buffs      set bonuses, weapon effects, soaks, value changes   (${activeBuffIds(cfg).length + VALUES.filter((v) => !isDefault(v, cfg.values[v.key])).length + cfg.attrs.length} active)`, value: 'buffs' },
         { name: 'Undo       restore an earlier change', value: 'undo' },
         { name: 'Doctor     check the install and the logs when something does not work', value: 'doctor' },
-        { name: 'Options    trainer compatibility, attribute locks, game folder, uninstall', value: 'options' },
+        { name: 'Options    trainer compatibility, game folder, status, uninstall', value: 'options' },
         { name: 'Quit', value: 'quit' },
       ],
     });
     if (action === 'quit' || action === '__back__') return;
     if (action === 'transmog') await menuTransmog();
     else if (action === 'buffs') await menuBuffs();
-    else if (action === 'values') await menuValues();
     else if (action === 'undo') await menuUndo();
     else if (action === 'doctor') { cmdDoctor(cfg); await input({ message: 'Enter to go back' }); }
     else if (action === 'options') await menuOptions();
@@ -731,34 +731,52 @@ async function interactive(cfg, opts) {
   // ----- Buffs -----
   async function menuBuffs() {
     const cat = loadTalentCatalog(cfg.file);
+    const lite = () => trainerMode(cfg.file);
+    const changedValues = () => VALUES.filter((v) => !isDefault(v, cfg.values[v.key]));
+    const valueLabel = (v) => `${v.label}: ${showNumber(cfg.values[v.key])}   (default ${showNumber(v.def)})`;
     for (;;) {
       const pick = await select({
-        message: 'Buffs: effects of gear you do not own, active on any outfit.',
-        pageSize: 12,
+        message: 'Buffs: effects of gear you do not own, soaks, and custom value changes. All active on any outfit.',
+        pageSize: 14,
         choices: [
           { name: '- back', value: '__back__' },
           { name: '+ add a buff', value: '__add__' },
+          { name: '+ add a custom buff (change a value: regen, speed, attack...)', value: '__value__' },
           ...activeBuffIds(cfg).map((id) => {
             const t = talentById(cat, id);
             return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
           }),
-          ...(cfg.recent.length ? [new Separator('Recently active')] : []),
+          ...changedValues().map((v) => ({ name: `x reset: ${valueLabel(v)}${lite() && !v.applies.includes('lite') ? '   (off while Trainer compatibility is on)' : ''}`, value: `val:${v.key}`, description: `${v.desc} Enter to change it or reset it to the default.` })),
+          ...cfg.attrs.map((a) => ({ name: `x unlock: ${attrByName(a.name)?.label ?? a.name} locked at ${a.value}`, value: `lock:${a.name}`, description: 'An attribute lock (advanced). Enter to change or remove it.' })),
+          ...(cfg.recent.length || cfg.recentValues.length ? [new Separator('Recently active')] : []),
           ...cfg.recent.map((id) => {
             const t = talentById(cat, id);
             return { name: `+ reactivate: ${fullName(t)}`, value: `re:${id}`, description: t.description ?? undefined };
           }),
+          ...cfg.recentValues.filter((r) => valueByKey(r.key)).map((r) => ({ name: `+ reactivate: ${valueByKey(r.key).label}: ${showNumber(r.value)}`, value: `reval:${r.key}`, description: valueByKey(r.key).desc })),
         ],
       });
       if (pick === '__back__') return;
+      if (pick === '__value__') { await pickValue(); continue; }
+      if (pick.startsWith('val:')) { await editValue(valueByKey(pick.slice(4))); continue; }
+      if (pick.startsWith('reval:')) {
+        const r = cfg.recentValues.find((x) => x.key === pick.slice(6));
+        writeConfig(cfg, {}, { backup, values: { [r.key]: r.value }, recentValues: cfg.recentValues.filter((x) => x.key !== r.key) });
+        saved();
+        continue;
+      }
+      if (pick.startsWith('lock:')) { await menuLocks(pick.slice(5)); continue; }
       let talents = activeBuffIds(cfg);
       if (pick.startsWith('re:')) talents.push(parseInt(pick.slice(3), 10));
       else if (pick.startsWith('remove:')) talents = talents.filter((t) => t !== parseInt(pick.slice(7), 10));
       else if (pick === '__add__') {
         const category = await select({
           message: 'Which kind of buff?',
-          choices: [{ name: '- back', value: '__back__' }, ...CATEGORIES.map((c) => ({ name: c, value: c }))],
+          choices: [{ name: '- back', value: '__back__' }, ...CATEGORIES.map((c) => ({ name: c, value: c })), { name: 'Custom: change a value (regen, speed, attack, defense...)', value: '__value__' }, { name: 'Custom: lock an attribute (advanced)', value: '__lock__' }],
         });
         if (category === '__back__') continue;
+        if (category === '__value__') { await pickValue(); continue; }
+        if (category === '__lock__') { await menuLocks(); continue; }
         let items = cat.filter((t) => t.category === category && !activeBuffIds(cfg).includes(t.id));
         if (category === 'Soaks' && !keeperInstalled(cfg.file)) console.log('  ' + SOAK_NOTE + '\n');
         if (category === 'Armor') {
@@ -786,30 +804,37 @@ async function interactive(cfg, opts) {
       saved();
       await showBuffImpact(cfg, before);
     }
-  }
 
-  // ----- Values -----
-  async function menuValues() {
-    const lite = trainerMode(cfg.file);
-    for (;;) {
+    // ----- custom buffs: the mod's numeric values -----
+    async function pickValue() {
       const pick = await select({
-        message: 'Values: the two multipliers take effect at the next respawn (shrine, transformation or reload); the rest right away.',
+        message: 'Custom buff: which value? The two multipliers take effect at the next respawn (shrine, transformation or reload); the rest right away.',
         pageSize: 16,
         choices: [
           { name: '- back', value: '__back__' },
           ...VALUES.map((v) => {
-            const blocked = lite && !v.applies.includes('lite');
-            return { name: `${v.label.padEnd(40)} ${cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '?'}${blocked ? '   (off while Trainer compatibility is on)' : ''}`, value: v.key, description: v.desc };
+            const blocked = lite() && !v.applies.includes('lite');
+            const cur = cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '?';
+            return { name: `${v.label.padEnd(40)} ${cur}${isDefault(v, cfg.values[v.key]) ? '' : `   (default ${showNumber(v.def)})`}${blocked ? '   (off while Trainer compatibility is on)' : ''}`, value: v.key, description: v.desc };
           }),
         ],
       });
       if (pick === '__back__') return;
-      const v = valueByKey(pick);
-      const answer = await ask(`${v.label} - new value (${v.desc})`, cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '');
-      if (answer === null) continue;
-      if (!Number.isFinite(parseFloat(answer))) { console.log('  Not a number, unchanged.\n'); continue; }
-      writeConfig(cfg, {}, { backup, values: { [v.key]: configNumber(answer) } });
-      saved();
+      await editValue(valueByKey(pick));
+    }
+
+    async function editValue(v) {
+      const cur = cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '';
+      const answer = await ask(`${v.label} - new value (${v.desc}) Default ${showNumber(v.def)}; type "default" to reset`, cur);
+      if (answer === null) return;
+      const reset = /^(default|reset|d)$/i.test(answer);
+      if (!reset && !Number.isFinite(parseFloat(answer))) { console.log('  Not a number, unchanged.\n'); return; }
+      const next = reset ? v.def : configNumber(answer);
+      let recentValues = cfg.recentValues.filter((r) => r.key !== v.key);
+      if (reset && !isDefault(v, cfg.values[v.key])) recentValues = [{ key: v.key, value: cfg.values[v.key] }, ...recentValues];
+      writeConfig(cfg, {}, { backup, values: { [v.key]: next }, recentValues });
+      if (lite() && !v.applies.includes('lite')) console.log('  Note: this value is off while Trainer compatibility is on.');
+      console.log('  ' + savedLine(cfg, v) + '\n');
     }
   }
 
@@ -842,7 +867,6 @@ async function interactive(cfg, opts) {
         choices: [
           { name: '- back', value: '__back__' },
           { name: `Trainer compatibility   ${trainer ? 'ON' : 'off'}   (turn on if WeMod/FLiNG/Cheat Engine cannot attach)`, value: 'trainer', description: 'Runs the in-game mod without hooks. Looks and buffs still apply within a second; attack/defense multipliers and the cooldown timers are unavailable. Needs the game closed to switch.' },
-          { name: `Attribute locks         ${cfg.attrs.length ? cfg.attrs.length + ' set' : 'none'}   (advanced)`, value: 'locks', description: 'Hold a stat such as max health or crit chance at a value you choose. Shows what the game currently uses.' },
           { name: `Game folder             ${gameDirOf(cfg.file)}`, value: 'folder', description: 'Change which game installation the tool works on, or reinstall the in-game part there. The choice is remembered in settings.json next to the tool.' },
           { name: `Status                  mod ${st.mode}, keeper ${st.keeper ? 'installed' : 'not installed'}, last log lines`, value: 'status' },
           { name: 'Uninstall               remove the in-game part (restores what it replaced)', value: 'uninstall' },
@@ -858,7 +882,6 @@ async function interactive(cfg, opts) {
         console.log();
         continue;
       }
-      if (pick === 'locks') { await menuLocks(); continue; }
       if (pick === 'folder') {
         const file = await chooseGameDir(findGameDirs(), { current: gameDirOf(cfg.file), offerReinstall: true });
         Object.assign(cfg, readConfig(file));
@@ -893,13 +916,13 @@ async function interactive(cfg, opts) {
     console.log('\n  Done. The tool folder itself can be deleted by hand.\n');
   }
 
-  async function menuLocks() {
+  async function menuLocks(preselected) {
     if (!keeperInstalled(cfg.file)) { console.log('  Attribute locks need the keeper (see Doctor). Not installed on this game.\n'); return; }
     for (;;) {
       const snap = readAttrSnapshot(cfg.file);
       const now = (name) => (snap && snap.values[name] !== undefined ? `game now ${fmtNum(snap.values[name])}${snap.stale ? ' (stale)' : ''}` : 'game now ?');
-      console.log('  ' + liveHeader(snap));
-      const pick = await select({
+      if (!preselected) console.log('  ' + liveHeader(snap));
+      const pick = preselected ?? await select({
         message: 'Attribute locks: the value is held there while you play.',
         pageSize: 16,
         choices: [
@@ -922,6 +945,7 @@ async function interactive(cfg, opts) {
       }
       writeConfig(cfg, {}, { backup, attrs });
       saved();
+      if (preselected) return;
     }
   }
 }
@@ -930,7 +954,7 @@ async function interactive(cfg, opts) {
 
 const HELP = `Transmog & Buff Tool ${VERSION}  (wukong-transmog)
 
-  wukong-transmog                      menu (Transmog, Buffs, Values, Undo, Doctor, Options)
+  wukong-transmog                      menu (Transmog, Buffs, Undo, Doctor, Options)
   wukong-transmog show                 what is configured right now
   wukong-transmog list [words...]      search looks (add --all-tiers, --json)
   wukong-transmog set [options]        change looks without the menu
@@ -945,8 +969,8 @@ const HELP = `Transmog & Buff Tool ${VERSION}  (wukong-transmog)
       buffs info <name|id>             what a buff does
       buffs add|remove <name|id>...    e.g. buffs add "gilded radiance 4-piece"
       buffs clear
-  wukong-transmog values               regen, speed, attack/defense multipliers
-      values set <key> <number>        e.g. values set manaRegen 5
+  wukong-transmog values               regen, speed, attack/defense multipliers (custom buffs in the menu)
+      values set <key> <number>        e.g. values set manaRegen 5; "default" resets
       values attr ...                  attribute locks (advanced)
   wukong-transmog undo [number]        list backups / restore one
   wukong-transmog doctor               check the install and the logs

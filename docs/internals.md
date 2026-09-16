@@ -63,6 +63,16 @@ wukong-transmog outfits delete boss
 wukong-transmog outfits key Ctrl+F7     # none = off
 ```
 
+## Values in full mode
+
+True Wukong reads its config at start and on Ctrl+Enter only. Since keeper v1.6 a config change in full
+mode also calls `CSharpModExample.TrueWukong.LoadConfig()` by reflection (same as Ctrl+Enter), so regen,
+cooldowns and windows follow a save at once; the mod applies attack/defense multipliers in
+`ApplyModifiers` at the next respawn (it multiplies the current value, so it must not be re-run). Move
+speed is set by the keeper in both modes (`BGUAISetSpeedRate` is idempotent). Every value in
+`src/values.js` carries `def`, the no-effect value the release ships; the menu shows it and "default"
+resets it, and reset values go to the `recentValues` line for one-click reactivation.
+
 ## Soaks (keeperSoaks)
 
 A soak (泡酒物, item IDs 2301-2329, `ItemPackageType.WinePartner`) has no talent. Drinking raises

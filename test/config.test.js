@@ -120,6 +120,15 @@ test('soaks live on their own line and count as buffs for the recent list', () =
   assert.deepEqual(cfg.recent, [901012, 106031, 2319, 2309]);
 });
 
+test('recentValues round-trip', () => {
+  const file = tmpConfig();
+  const cfg = readConfig(file);
+  writeConfig(cfg, {}, { backup: false, values: { wukongSpeed: '1' }, recentValues: [{ key: 'wukongSpeed', value: '12E-1' }, { key: 'attackMultiplier', value: '2' }] });
+  assert.equal(cfg.values.wukongSpeed, '1');
+  assert.deepEqual(cfg.recentValues, [{ key: 'wukongSpeed', value: '12E-1' }, { key: 'attackMultiplier', value: '2' }]);
+  assert.match(fs.readFileSync(file, 'utf8'), /^recentValues = wukongSpeed:12E-1;attackMultiplier:2\r\n/m);
+});
+
 test('parseOutfits / formatOutfits', () => {
   assert.deepEqual(parseOutfits('A=1,2;B=0;=5;C'), [{ name: 'A', ids: [1, 2] }, { name: 'B', ids: [] }]);
   assert.equal(formatOutfits([]), '0');

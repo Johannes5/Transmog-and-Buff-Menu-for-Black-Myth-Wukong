@@ -81,6 +81,7 @@ namespace TransmogKeeper
         private string _lastPawn = "";
         private string _lastTalentPawn = "";
         private string _lastSpeedPawn = "";
+        private bool _speedWasSet;
         private DateTime _lastApply = DateTime.MinValue;
         private DateTime _lastRegen = DateTime.MinValue;
         private string _lastLogged = "";
@@ -118,7 +119,13 @@ namespace TransmogKeeper
         {
             try
             {
-                if (ConfigChanged()) LoadConfig();
+                if (ConfigChanged())
+                {
+                    LoadConfig();
+                    // Full mode: True Wukong reads its config only at start and on Ctrl+Enter. Call its
+                    // LoadConfig so regen, cooldowns and the values for the next respawn follow a save from the tool.
+                    if (FullMode()) Stage("reload", ReloadTrueWukong);
+                }
 
                 APawn pawn = GetControlledPawn();
                 if (pawn == null) return;
@@ -337,6 +344,24 @@ namespace TransmogKeeper
             return _fullMode;
         }
 
+        // Same as Ctrl+Enter in True Wukong: its static LoadConfig() re-reads TrueWukongConfig.txt. Found by
+        // reflection so that the keeper does not depend on the mod's assembly (and survives its absence).
+        private void ReloadTrueWukong()
+        {
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type;
+                try { type = asm.GetType("CSharpModExample.TrueWukong", false); } catch { continue; }
+                if (type == null) continue;
+                var method = type.GetMethod("LoadConfig", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (method == null || method.GetParameters().Length != 0) { LogOnce("True Wukong has no LoadConfig(); values need Ctrl+Enter"); return; }
+                method.Invoke(null, null);
+                Log("True Wukong config reloaded (values apply; attack/defense multipliers at the next respawn)");
+                return;
+            }
+            LogOnce("True Wukong not loaded; nothing to reload");
+        }
+
         private void KeepValues(APawn pawn, string name)
         {
             bool full = FullMode();
@@ -349,9 +374,9 @@ namespace TransmogKeeper
                     if (Math.Abs(Get(pawn, attr) - value) > 0.01f) Set(pawn, attr, value);
                 }
             }
-            if (full) return;
-
-            // Move speed: once per pawn (and after a config reload, which clears _lastSpeedPawn).
+            // Move speed: once per pawn (and after a config reload, which clears _lastSpeedPawn). Setting a
+            // rate is idempotent, so this is safe in full mode too, where True Wukong sets the same rate at
+            // the next respawn; here it takes effect right after a save.
             float speed = Num("wukongSpeed", 1f);
             if (name != _lastSpeedPawn)
             {
@@ -361,7 +386,10 @@ namespace TransmogKeeper
                     BGUFunctionLibraryCS.BGUAISetSpeedRate(pawn, speed);
                     Log($"Speed rate {speed} on {name}");
                 }
+                else if (full == false || _speedWasSet) { BGUFunctionLibraryCS.BGUAISetSpeedRate(pawn, 1f); }
+                _speedWasSet = speed > 0f && Math.Abs(speed - 1f) > 0.001f;
             }
+            if (full) return;
 
             if (Get(pawn, Hp) <= 0f) return; // dead: no regen
 

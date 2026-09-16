@@ -9,7 +9,13 @@ export const KEYS = { staff: 'staffTransmog', spear: 'spearTransmog' };
 export const TALENT_KEY = 'addTalents';
 export const SOAKS_KEY = 'keeperSoaks';      // TransmogKeeper v1.6+: soak item IDs whose gourd effect is kept active
 export const RECENT_KEY = 'recentBuffs';     // tool only: buffs removed lately, newest first (the menu offers to reactivate them)
+export const RECENT_VALUES_KEY = 'recentValues';  // tool only: values reset lately "key:value;key:value", newest first
 export const RECENT_KEPT = 12;
+
+export function parseRecentValues(text) {
+  return String(text ?? '').split(';').map((p) => p.trim()).filter((p) => p.includes(':')).map((p) => { const i = p.indexOf(':'); return { key: p.slice(0, i), value: p.slice(i + 1) }; }).filter((r) => r.key && r.value !== '');
+}
+export const formatRecentValues = (list) => (list.length ? list.map((r) => `${r.key}:${r.value}`).join(';') : '0');
 export const ATTR_KEY = 'keeperAttr';
 export const OUTFITS_KEY = 'keeperOutfits';   // "Name=id,id;Other name=id,id"  saved looks (TransmogKeeper v1.5+ cycles them)
 export const HOTKEY_KEY = 'keeperOutfitKey';  // "F7", "Ctrl+F7", "None"        key that puts on the next saved look in game
@@ -105,6 +111,7 @@ export function readConfig(file) {
     talents: parseIds(values[TALENT_KEY]),
     recent: parseIds(values[RECENT_KEY]),
     soaks: parseIds(values[SOAKS_KEY]),
+    recentValues: parseRecentValues(values[RECENT_VALUES_KEY]),
     attrs: parseAttrLine(values[ATTR_KEY]),
     saved: parseOutfits(values[OUTFITS_KEY]),
     hotkey: values[HOTKEY_KEY] === undefined || values[HOTKEY_KEY] === '' ? DEFAULT_HOTKEY : values[HOTKEY_KEY] === '0' ? 'None' : values[HOTKEY_KEY],
@@ -115,7 +122,7 @@ export function readConfig(file) {
  * Write the tool's lines. `outfits` = { staff?: ids, spear?: ids }; the options replace the other
  * lines when given. A dated backup is written first (unless backup = false) and old backups pruned.
  */
-export function writeConfig(cfg, outfits, { backup = true, talents, soaks, values, attrs, saved, hotkey } = {}) {
+export function writeConfig(cfg, outfits, { backup = true, talents, soaks, values, recentValues, attrs, saved, hotkey } = {}) {
   // Buffs that leave the active list are remembered as "recently active" (newest first, capped).
   let recent;
   if (talents || soaks) {
@@ -147,6 +154,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, soaks, value
   if (soaks) setIds(SOAKS_KEY, soaks, 'TransmogKeeper only: soaks (gourd additives) whose effect is kept active as if just drunk');
   if (recent) setIds(RECENT_KEY, recent, 'Transmog & Buff Tool only: buffs removed lately (the menu offers to reactivate them)');
   if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);
+  if (recentValues) setLine(RECENT_VALUES_KEY, formatRecentValues(recentValues.slice(0, RECENT_KEPT)), 'Transmog & Buff Tool only: values reset lately (the menu offers to reactivate them)');
   if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');
   if (saved) setLine(OUTFITS_KEY, formatOutfits(saved), 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)');
   if (hotkey) setLine(HOTKEY_KEY, hotkey, 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off)');

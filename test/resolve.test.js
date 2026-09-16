@@ -58,6 +58,14 @@ test('soaks are a buff category even without the mod list file', () => {
   assert.ok(SOAKS.every((s) => s.id >= 2301 && s.id <= 2329));
 });
 
+test('every value has a numeric default', async () => {
+  const { VALUES, isDefault } = await import('../src/values.js');
+  for (const v of VALUES) assert.ok(Number.isFinite(parseFloat(v.def)), v.key);
+  assert.ok(isDefault(VALUES.find((v) => v.key === 'wukongSpeed'), '1'));
+  assert.ok(!isDefault(VALUES.find((v) => v.key === 'wukongSpeed'), '2'));
+  assert.ok(isDefault(VALUES.find((v) => v.key === 'perfectDodgeTiming'), '3E-2'));
+});
+
 test('effect tables have the shape the catalog expects', () => {
   for (const [id, c] of Object.entries(CURIO_EFFECTS)) {
     assert.ok(id >= 106000 && id < 107000, id);
