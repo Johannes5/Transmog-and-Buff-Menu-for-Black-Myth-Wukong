@@ -100,7 +100,7 @@ export function loadTalentCatalog(configFile) {
 
 function soakEntries() {
   return SOAKS.map((s) => {
-    const kind = s.note === 'drink' ? 'soak effect that only matters while drinking; kept on anyway' : s.note === 'instant' ? 'soak effect that happens once per drink; the keeper repeats it every 5 s' : 'soak effect kept active as if just drunk';
+    const kind = 'soak: its effect is applied whenever you drink from the gourd, exactly like a slotted soak' + (s.note === 'drink' ? ' (in game this one has an extra condition; from the tool it applies on every drink)' : '');
     return { id: s.id, slot: 'talent', line: 'soak', category: 'Soaks', group: null, tier: null, name: s.name, kind, description: s.text, aliases: `${s.zh} ${s.name} Soaks soak gourd ${kind}`, note: s.text };
   });
 }

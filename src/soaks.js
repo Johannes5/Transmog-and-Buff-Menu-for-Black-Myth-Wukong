@@ -1,10 +1,12 @@
 // Gourd soaks (泡酒物). In the game a soak is a consumable (item IDs 2301-2329) whose effect is a set
-// of buffs added whenever you drink from the gourd (Evt_TriggerWinePartner -> ConsumeDesc effects).
-// TransmogKeeper v1.6+ raises that event whenever one of the soak's buffs is missing, so the effect
-// stays on as if you had just drunk (see docs/soaks-research.md for names, texts and sources).
+// of buffs the game adds when a gourd drink ends (ConsumeDesc effects). TransmogKeeper v1.6+ listens
+// for the drink-end event and adds the buffs of every soak in keeperSoaks, so a soak from the tool
+// behaves like a slotted one: only on a drink, for the buff's own duration (names, texts and sources
+// in docs/soaks-research.md).
 //
-//   note: 'instant' = the effect happens once per drink (the keeper repeats it every 5 s);
-//         'drink'   = only meaningful at the moment of drinking (kept for completeness, marked in the menu).
+//   note: 'drink' = in game this soak only fires under an extra condition (resurrection, full health,
+//         a chance, ...); from the tool it fires on every drink.
+//         'instant' = a one-off effect per drink (Focus, Mana), same as in game.
 export const SOAKS = [
   { id: 2301, name: "Guanyin's Willow Leaf", zh: '净瓶柳叶', text: 'Upon resurrection in battle, recovers gourd uses.', note: 'drink' },
   { id: 2302, name: 'Flower Primes', zh: '百花蕤', text: 'Using the gourd removes all Four Bane States.', note: 'drink' },

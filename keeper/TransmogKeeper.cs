@@ -308,41 +308,60 @@ namespace TransmogKeeper
         }
 
         // ---------- soaks (gourd additives) ----------
-        // Drinking from the gourd raises Evt_TriggerWinePartner(soakId); the game then adds the buffs of
-        // that soak's ConsumeDesc (BUS_UnitItemComp.OnTriggrWinePartnerEffect). The keeper raises the same
-        // event whenever one of the soak's buffs is missing, so the effect behaves as if you had just drunk.
-        // Instant effects (a buff that ends at once) are repeated every SoakRetrySeconds.
+        // A slotted soak works like this: when a gourd drink ends, the game adds the buffs of the soak's
+        // ConsumeDesc (BUS_UnitItemComp.OnTriggrWinePartnerEffect: Evt_BuffAdd, source type 40, default
+        // duration). The keeper subscribes to the player's Evt_PoleDrinkStateEnd (the C# event collection,
+        // no hook needed) and adds the buffs of every soak in keeperSoaks at that moment, so a soak from the
+        // tool behaves exactly like one slotted in the gourd: only on a drink, for the buff's own duration.
+        // Soaks whose in-game trigger is conditional (resurrection, low health, ...) fire on every drink here.
+
+        private string _drinkPawn = "";
+        private Delegate _drinkHandler;
+        private volatile bool _drinkPending;
 
         private void KeepSoaks(APawn pawn, string name)
         {
-            if (_soaks.Count == 0) return;
+            if (_soaks.Count == 0) { _drinkPawn = ""; return; }
+            if (name != _drinkPawn) SubscribeDrink(pawn, name);
+            if (!_drinkPending) return;
+            _drinkPending = false;
             if (Get(pawn, Hp) <= 0f) return;
-            object events = BUS_EventCollectionCS.Get(pawn);
-            if (events == null) return;
-            var now = DateTime.UtcNow;
+            var added = new List<string>();
             foreach (int soak in _soaks)
             {
-                DateTime next;
-                if (_soakNext.TryGetValue(soak, out next) && now < next) continue;
                 var desc = GameDBRuntime.GetConsumeDesc(soak);
-                if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); _soakNext[soak] = now.AddSeconds(60); continue; }
-                // Evt_TriggerWinePartner takes a trigger *type* and only fires for soaks slotted in the gourd,
-                // so add the soak's buffs directly, exactly as BUS_UnitItemComp.OnTriggrWinePartnerEffect does
-                // (source type 40, default duration).
-                var added = new List<int>();
+                if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); continue; }
                 foreach (var fx in desc.ConsumeEffect)
                 {
                     if (fx.EffectType != ResB1.ConsumeEffectType.Buff) continue;
-                    if (BGUFunctionLibraryCS.BGUHasBuffByID(pawn, fx.EffectId)) continue;
                     BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, fx.EffectId, (EBuffSourceType)40, 0f);
-                    added.Add(fx.EffectId);
+                    added.Add($"{soak}:{fx.EffectId}");
                 }
-                if (added.Count == 0) { _soakNext[soak] = now.AddSeconds(1); continue; }
-                _soakNext[soak] = now.AddSeconds(SoakRetrySeconds);
-                if (!_soakLogged.Contains(soak)) { _soakLogged.Add(soak); Log($"Soak {soak}: buff {string.Join(",", added)} added on {name}"); }
             }
+            if (added.Count > 0) Log($"Drink: soak buffs {string.Join(" ", added)} added on {name}");
         }
-        private readonly HashSet<int> _soakLogged = new HashSet<int>();
+
+        /** Adds OnDrinkEnd to the pawn's Evt_PoleDrinkStateEnd delegate field (a new collection per pawn). */
+        private void SubscribeDrink(APawn pawn, string name)
+        {
+            try
+            {
+                object events = BUS_EventCollectionCS.Get(pawn);
+                if (events == null) return;
+                var field = events.GetType().GetField("Evt_PoleDrinkStateEnd");
+                if (field == null) { LogOnce("Evt_PoleDrinkStateEnd not found; soaks from the tool are unavailable in this game build"); _drinkPawn = name; return; }
+                if (_drinkHandler == null || _drinkHandler.GetType() != field.FieldType)
+                    _drinkHandler = Delegate.CreateDelegate(field.FieldType, this, "OnDrinkEnd");
+                var current = field.GetValue(events) as Delegate;
+                if (current == null || Array.IndexOf(current.GetInvocationList(), _drinkHandler) < 0)
+                    field.SetValue(events, Delegate.Combine(current, _drinkHandler));
+                _drinkPawn = name;
+                Log($"Listening for gourd drinks on {name} ({_soaks.Count} soak(s) from the tool)");
+            }
+            catch (Exception e) { LogOnce("drink subscribe error: " + e.Message); _drinkPawn = name; }
+        }
+
+        private void OnDrinkEnd() { _drinkPending = true; }
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
 
