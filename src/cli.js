@@ -28,6 +28,7 @@ import {
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
 import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, validPresetName } from './presets.js';
+import { readOwned, isOwned, isSetOwned } from './owned.js';
 import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
 
@@ -673,12 +674,21 @@ async function interactive(cfg, opts) {
       if (!quiet) saved();
     };
     const current = (slot) => (outfit[slot] ? itemById(outfit[slot]).name : 'real gear');
+    // "only looks I have unlocked": from the keeper's owned-items snapshot (needs a save loaded once)
+    let ownedOnly = !!readSettings().ownedOnly;
+    const owned = () => (ownedOnly ? readOwned(cfg.file) : null);
+    const filterLabel = () => {
+      const o = readOwned(cfg.file);
+      if (!ownedOnly) return 'Show        all looks';
+      return o ? `Show        only looks I have unlocked (${o.ids.size} items in the save as of ${o.time.toLocaleString()})` : 'Show        only looks I have unlocked (no save data yet: load a save once with the keeper installed)';
+    };
     for (;;) {
       const action = await select({
         message: 'Transmog: only the look changes, your real gear and stats stay as they are.',
-        pageSize: 11,
+        pageSize: 12,
         choices: [
           { name: '- back', value: '__back__' },
+          { name: filterLabel(), value: 'filter', description: 'Switch between every look the game has and only the ones you have unlocked in your save (armor by piece, any tier; weapons and gourds exactly). The keeper writes the list while a save is loaded.' },
           { name: `Armor set   pick a whole set`, value: 'set' },
           { name: `Weapon      ${current('weapon')}`, value: 'weapon' },
           { name: `Head        ${current('head')}`, value: 'head' },
@@ -691,6 +701,7 @@ async function interactive(cfg, opts) {
         ],
       });
       if (action === '__back__') return;
+      if (action === 'filter') { ownedOnly = !ownedOnly; writeSettings({ ownedOnly }); continue; }
       if (action === 'saved') {
         await menuSaved();
         Object.assign(outfit, idsToOutfit(cfg.outfits.staff).outfit); // a saved look may have been put on
@@ -711,8 +722,8 @@ async function interactive(cfg, opts) {
           save(quiet);
         };
         const setKey = await pickFrom(
-          'Turn my armor into which set?',
-          sets().map((s) => ({ id: s.key, name: shortName(s.name) + (s.fixedTier !== undefined ? ' (Mythical look)' : ''), note: setPieceNames(s) + (s.note ? '. ' + s.note : ''), aliases: (s.aliases ?? '') + ' ' + s.name + ' ' + setPieceNames(s) })),
+          ownedOnly ? 'Turn my armor into which set? (only sets you have unlocked)' : 'Turn my armor into which set?',
+          sets().filter((s) => isSetOwned(setPieces(s.key), owned())).map((s) => ({ id: s.key, name: shortName(s.name) + (s.fixedTier !== undefined ? ' (Mythical look)' : ''), note: setPieceNames(s) + (s.note ? '. ' + s.note : ''), aliases: (s.aliases ?? '') + ' ' + s.name + ' ' + setPieceNames(s) })),
           [{ name: '- back', value: '__back__' }],
           (key) => { applySet(key, true); return key === '__back__' ? '' : `wearing: ${shortName(sets().find((s) => s.key === key)?.name ?? key)} (still in the list)`; },
         );
@@ -727,8 +738,8 @@ async function interactive(cfg, opts) {
         save(quiet);
       };
       const chosen = await pickFrom(
-        `Turn my ${SLOT_LABEL[slot].toLowerCase()} into:`,
-        pool.filter((i) => i.slot === slot),
+        `Turn my ${SLOT_LABEL[slot].toLowerCase()} into:${ownedOnly ? ' (only looks you have unlocked)' : ''}`,
+        pool.filter((i) => i.slot === slot && isOwned(i, owned())),
         [{ name: '- back (keep as is)', value: '__back__' }, { name: '- real gear (no transmog in this slot)', value: null }],
         (id) => { applySlot(id, true); return id === '__back__' ? '' : `wearing: ${id === null ? 'real gear' : itemById(id).name} (still in the list)`; },
       );

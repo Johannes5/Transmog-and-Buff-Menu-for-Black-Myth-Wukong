@@ -42,6 +42,10 @@ Command line equivalents: `wukong-transmog show | list | set | outfits | buffs |
 
 A named buff bundles any number of buffs, soaks and value changes under one name, so "Stinger" or "Defence +40%" is one entry you switch on or off. The Buffs screen lists them first. "+ save the active buffs as a named buff" turns whatever is active right now into one; each named buff can get an **in-game key** that toggles it while you play (for example F8), and can be renamed, updated or deleted. A few come with the tool: Movement Speed 2x, Defence +40%, Defence +20%, Mana Regen and Stinger.
 
+## Only looks you have unlocked
+
+The Transmog screen has a "Show" switch: every look the game has, or only the ones you have unlocked in your save. The keeper reads your bag while a save is loaded (armor counts by piece in any quality tier, weapons and gourds exactly), so load a save once after installing before the filter has anything to show. The setting is remembered.
+
 ## Saved looks and the in-game key
 
 Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, and the tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.

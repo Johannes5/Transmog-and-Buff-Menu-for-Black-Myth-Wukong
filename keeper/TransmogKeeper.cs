@@ -146,6 +146,7 @@ namespace TransmogKeeper
                 Stage("soaks", () => KeepSoaks(pawn, name));
                 Stage("values", () => KeepValues(pawn, name));
                 Stage("snapshot", () => WriteAttrSnapshot(pawn));
+                Stage("owned", () => WriteOwnedSnapshot(pawn));
             }
             catch (Exception e)
             {
@@ -546,6 +547,39 @@ namespace TransmogKeeper
                 File.WriteAllText(AttrsPath, "time=" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "\n" + body);
             }
             catch (Exception e) { LogOnce("snapshot error: " + e.Message); }
+        }
+
+        // ---------- owned equipment snapshot for the CLI ----------
+        // Every equipment item in the save's bag (armor, weapons, gourds, vessels) plus the earlier IDs of
+        // upgraded items (HistoryIdList), so the tool can offer "only looks I have unlocked".
+
+        private static readonly string OwnedPath = Path.Combine(BaseDir, "TransmogKeeperOwned.txt");
+        private const double OwnedSeconds = 10;
+        private DateTime _lastOwned = DateTime.MinValue;
+        private string _lastOwnedBody = "";
+
+        private void WriteOwnedSnapshot(APawn pawn)
+        {
+            if ((DateTime.UtcNow - _lastOwned).TotalSeconds < OwnedSeconds) return;
+            _lastOwned = DateTime.UtcNow;
+            var roleCs = RoleDataOf(pawn);
+            if (roleCs == null) return;
+            var ids = new SortedSet<int>();
+            var bag = roleCs.Bag;
+            if (bag?.EquipList != null)
+                foreach (var eq in bag.EquipList)
+                {
+                    if (eq == null) continue;
+                    if (eq.EquipId > 0) ids.Add(eq.EquipId);
+                    if (eq.HistoryIdList != null) foreach (int h in eq.HistoryIdList) if (h > 0) ids.Add(h);
+                }
+            var wear = roleCs.Actor?.Wear?.EquipList;
+            if (wear != null) foreach (var w in wear) if (w != null && w.Id > 0) ids.Add(w.Id);
+            string body = string.Join("\n", ids);
+            if (body == _lastOwnedBody) return;
+            _lastOwnedBody = body;
+            try { File.WriteAllText(OwnedPath, "time=" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "\n" + body + "\n"); }
+            catch (Exception e) { LogOnce("owned snapshot error: " + e.Message); }
         }
 
         // ---------- diagnostics ----------
