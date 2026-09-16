@@ -87,6 +87,8 @@ namespace TransmogKeeper
         private string _lastTalentPawn = "";
         private string _lastSpeedPawn = "";
         private bool _speedWasSet;
+        private DateTime _lastSpeedSet = DateTime.MinValue;
+        private string _loggedSpeedPawn = "";
         private DateTime _lastApply = DateTime.MinValue;
         private DateTime _lastRegen = DateTime.MinValue;
         private string _lastLogged = "";
@@ -164,6 +166,7 @@ namespace TransmogKeeper
                 Stage("soaks", () => KeepSoaks(pawn, name));
                 Stage("buffs", () => KeepBuffs(pawn, name));
                 Stage("values", () => KeepValues(pawn, name));
+                Stage("resume", () => ResumeTrueWukong(pawn));
                 Stage("snapshot", () => WriteAttrSnapshot(pawn));
                 Stage("owned", () => WriteOwnedSnapshot(pawn));
             }
@@ -567,6 +570,34 @@ namespace TransmogKeeper
             LogOnce("True Wukong not loaded; nothing to reload");
         }
 
+        // True Wukong stops its passive loops (regen, focus, gourd refill) on every screen blackout
+        // (menu, cutscene, fast travel) and restarts them on the next non-movement input. When that
+        // restart does not happen the values silently stop. If the flag stays off for a few seconds while
+        // the player is alive, restart the loops the same way the mod does (reflection, full mode only).
+        private DateTime _asyncOffSince = DateTime.MinValue;
+
+        private void ResumeTrueWukong(APawn pawn)
+        {
+            if (!FullMode() || Get(pawn, Hp) <= 0f) { _asyncOffSince = DateTime.MinValue; return; }
+            Type type = null;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) { try { type = asm.GetType("CSharpModExample.TrueWukong", false); } catch { } if (type != null) break; }
+            if (type == null) return;
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            var fAllow = type.GetField("allowAsync", flags);
+            if (fAllow == null || fAllow.FieldType != typeof(bool)) return;
+            if ((bool)fAllow.GetValue(null)) { _asyncOffSince = DateTime.MinValue; return; }
+            var now = DateTime.UtcNow;
+            if (_asyncOffSince == DateTime.MinValue) { _asyncOffSince = now; return; }
+            if ((now - _asyncOffSince).TotalSeconds < 4) return;
+            fAllow.SetValue(null, true);
+            type.GetField("pause", flags)?.SetValue(null, false);
+            (type.GetField("qPassiveEffects", flags)?.GetValue(null) as System.Collections.IList)?.Clear();
+            type.GetMethod("PassiveEffects", flags)?.Invoke(null, null);
+            type.GetMethod("PassiveFocus", flags)?.Invoke(null, null);
+            _asyncOffSince = DateTime.MinValue;
+            Log("True Wukong's passive loops were off for 4 s while playing; restarted them (regen, focus)");
+        }
+
         private void KeepValues(APawn pawn, string name)
         {
             bool full = FullMode();
@@ -583,13 +614,16 @@ namespace TransmogKeeper
             // rate is idempotent, so this is safe in full mode too, where True Wukong sets the same rate at
             // the next respawn; here it takes effect right after a save.
             float speed = Num("wukongSpeed", 1f);
-            if (name != _lastSpeedPawn)
+            // re-asserted every 5 s too: the game resets the rate after some cutscenes and transformations
+            bool speedDue = (DateTime.UtcNow - _lastSpeedSet).TotalSeconds >= 5 && speed > 0f && Math.Abs(speed - 1f) > 0.001f;
+            if (name != _lastSpeedPawn || speedDue)
             {
                 _lastSpeedPawn = name;
+                _lastSpeedSet = DateTime.UtcNow;
                 if (speed > 0f && Math.Abs(speed - 1f) > 0.001f)
                 {
                     BGUFunctionLibraryCS.BGUAISetSpeedRate(pawn, speed);
-                    Log($"Speed rate {speed} on {name}");
+                    if (name != _loggedSpeedPawn) { _loggedSpeedPawn = name; Log($"Speed rate {speed} on {name} (re-asserted every 5 s)"); }
                 }
                 else if (full == false || _speedWasSet) { BGUFunctionLibraryCS.BGUAISetSpeedRate(pawn, 1f); }
                 _speedWasSet = speed > 0f && Math.Abs(speed - 1f) > 0.001f;
