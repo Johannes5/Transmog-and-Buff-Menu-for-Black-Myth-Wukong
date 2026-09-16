@@ -202,20 +202,54 @@ namespace TransmogKeeper
             }
 
             var missing = new List<int>();
+            var covered = new HashSet<EquipPosition>();
             foreach (int id in _ids)
             {
                 var desc = GameDBRuntime.GetEquipDesc(id);
                 if (desc == null) continue;
+                covered.Add(desc.EquipPosition);
                 int shown;
                 if (!data.MapEquip.TryGetValue(desc.EquipPosition, out shown) || shown != id) missing.Add(id);
             }
 
+            // Slots without a transmog must show the real gear again (a look removed from the tool used to
+            // stay on until the next respawn). The real equipment comes from the player's role data.
+            var restore = new List<int>();
+            var roleCs = RoleDataOf(pawn);
+            if (roleCs != null)
+            {
+                foreach (var pos in new[] { EquipPosition.Head, EquipPosition.Upwear, EquipPosition.Arm, EquipPosition.Foot, EquipPosition.Hulu, EquipPosition.Weapon })
+                {
+                    if (covered.Contains(pos)) continue;
+                    int shown;
+                    if (!data.MapEquip.TryGetValue(pos, out shown)) continue;
+                    int real = 0;
+                    try { var eq = RoleDataHelper.GetWearEquipByPosition(roleCs, pos); if (eq != null) real = eq.EquipId; } catch { continue; }
+                    if (real > 0 && shown != real) restore.Add(real);
+                }
+            }
+
             _lastPawn = name;
-            if (missing.Count == 0) return;
+            if (missing.Count == 0 && restore.Count == 0) return;
 
             foreach (int id in missing) BGUFunctionLibraryCS.ChangeEquip(pawn, id);
+            foreach (int id in restore) BGUFunctionLibraryCS.ChangeEquip(pawn, id);
             _lastApply = DateTime.UtcNow;
-            Log($"Applied {string.Join(",", missing)} on {name}");
+            if (missing.Count > 0) Log($"Applied {string.Join(",", missing)} on {name}");
+            if (restore.Count > 0) Log($"Restored real gear {string.Join(",", restore)} on {name}");
+        }
+
+        /** The player's saved role data (real equipment, bag, gourd); null outside of play. */
+        private static CommB1.ReadOnlyRoleDataCS RoleDataOf(APawn pawn)
+        {
+            try
+            {
+                var controller = pawn.GetController();
+                if (controller == null) return null;
+                var role = BGU_DataUtil.GetReadOnlyData<IBPC_PlayerRoleData, BPC_PlayerRoleData>(controller);
+                return role?.RoleData?.RoleCs;
+            }
+            catch { return null; }
         }
 
         // ---------- extra talents ----------
