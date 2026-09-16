@@ -364,7 +364,7 @@ namespace TransmogKeeper
         private void KeepSoaks(APawn pawn, string name)
         {
             if (_soaks.Count == 0) { _drinkPawn = ""; return; }
-            if (name != _drinkPawn) SubscribeDrink(pawn, name);
+            if (name != _drinkPawn || !DrinkStillSubscribed(pawn)) SubscribeDrink(pawn, name);
             if (!_drinkPending) return;
             _drinkPending = false;
             if (Get(pawn, Hp) <= 0f) return;
@@ -404,6 +404,26 @@ namespace TransmogKeeper
         }
 
         private void OnDrinkEnd() { _drinkPending = true; }
+
+        /**
+         * The game rebuilds the drink event when the gourd changes (the component re-attaches), which
+         * drops our handler. Check the wrapper's multicast list (private field _MultiCastDel) once a second.
+         */
+        private bool DrinkStillSubscribed(APawn pawn)
+        {
+            try
+            {
+                if (_drinkHandler == null) return false;
+                var coll = BUS_EventCollectionCS.Get(pawn);
+                var gs = coll?.Evt_PoleDrinkStateEnd;
+                if (gs == null) return false;
+                var field = gs.GetType().GetField("_MultiCastDel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (field == null) return true; // cannot tell; assume fine rather than re-adding forever
+                var del = field.GetValue(gs) as Delegate;
+                return del != null && del.GetInvocationList().Any(d => d.Method == _drinkHandler.Method && ReferenceEquals(d.Target, _drinkHandler.Target));
+            }
+            catch { return true; }
+        }
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
 
