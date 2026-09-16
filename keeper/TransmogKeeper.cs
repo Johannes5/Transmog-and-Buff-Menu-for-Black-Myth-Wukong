@@ -359,55 +359,66 @@ namespace TransmogKeeper
 
         private string _drinkPawn = "";
         private Delegate _drinkHandler;
-        private volatile bool _drinkPending;
+        private APawn _drinkPawnRef;
 
         private void KeepSoaks(APawn pawn, string name)
         {
             if (_soaks.Count == 0) { _drinkPawn = ""; return; }
             if (name != _drinkPawn || !DrinkStillSubscribed(pawn)) SubscribeDrink(pawn, name);
-            if (!_drinkPending) return;
-            _drinkPending = false;
-            if (Get(pawn, Hp) <= 0f) return;
-            var added = new List<string>();
-            foreach (int soak in _soaks)
-            {
-                var desc = GameDBRuntime.GetConsumeDesc(soak);
-                if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); continue; }
-                foreach (var fx in desc.ConsumeEffect)
-                {
-                    if (fx.EffectType != ResB1.ConsumeEffectType.Buff) continue;
-                    BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, fx.EffectId, (EBuffSourceType)40, 0f);
-                    added.Add($"{soak}:{fx.EffectId}");
-                }
-            }
-            if (added.Count > 0) Log($"Drink: soak buffs {string.Join(" ", added)} added on {name}");
         }
 
-        /** Adds OnDrinkEnd to the pawn's Evt_PoleDrinkStateEnd delegate field (a new collection per pawn). */
+        /**
+         * The game raises Evt_TriggerWinePartner(triggerType) from anim notifies at fixed points of the
+         * drink (type 0 = the sip itself, 1-4 = other moments, e.g. Deathstinger fires on 3, just before
+         * the heal). Its own handler applies the slotted soaks whose ConsumeDesc.WinePartnerTrigger
+         * matches. Ours is added to the same event and does the same for the soaks in keeperSoaks.
+         */
         private void SubscribeDrink(APawn pawn, string name)
         {
             try
             {
-                // BUS_EventCollectionCS.Get returns the game-side BUS_GSEventCollection; its events are GSDel_*
-                // wrappers with a `+` operator that adds a C# delegate to their multicast list.
                 var coll = BUS_EventCollectionCS.Get(pawn);
                 if (coll == null) return;
-                var gs = coll.Evt_PoleDrinkStateEnd;
-                if (gs == null) { LogOnce("Evt_PoleDrinkStateEnd is null on the event collection; soaks from the tool are unavailable in this game build"); _drinkPawn = name; return; }
-                var handler = new b1.EventDelDefine.Del_Void(OnDrinkEnd);
+                var gs = coll.Evt_TriggerWinePartner;
+                if (gs == null) { LogOnce("Evt_TriggerWinePartner is null on the event collection; soaks from the tool are unavailable in this game build"); _drinkPawn = name; return; }
+                var handler = new b1.EventDelDefine.Del_Void_Int(OnWinePartnerTrigger);
                 _drinkHandler = handler;
-                coll.Evt_PoleDrinkStateEnd = gs + handler;
+                _drinkPawnRef = pawn;
+                coll.Evt_TriggerWinePartner = gs + handler;
                 _drinkPawn = name;
                 Log($"Listening for gourd drinks on {name} ({_soaks.Count} soak(s) from the tool)");
             }
             catch (Exception e) { LogOnce("drink subscribe error: " + e.Message); _drinkPawn = name; }
         }
 
-        private void OnDrinkEnd() { _drinkPending = true; }
+        /** Runs on the game thread inside the drink, like the game's own soak handler. */
+        private void OnWinePartnerTrigger(int triggerType)
+        {
+            try
+            {
+                var pawn = _drinkPawnRef;
+                if (pawn == null || _soaks.Count == 0) return;
+                var added = new List<string>();
+                foreach (int soak in _soaks)
+                {
+                    var desc = GameDBRuntime.GetConsumeDesc(soak);
+                    if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); continue; }
+                    if (desc.WinePartnerTrigger != triggerType) continue;
+                    foreach (var fx in desc.ConsumeEffect)
+                    {
+                        if (fx.EffectType != ResB1.ConsumeEffectType.Buff) continue;
+                        BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, fx.EffectId, (EBuffSourceType)40, 0f);
+                        added.Add($"{soak}:{fx.EffectId}");
+                    }
+                }
+                if (added.Count > 0) Log($"Drink (trigger {triggerType}): soak buffs {string.Join(" ", added)} added");
+            }
+            catch (Exception e) { LogOnce("soak trigger error: " + e.Message); }
+        }
 
         /**
-         * The game rebuilds the drink event when the gourd changes (the component re-attaches), which
-         * drops our handler. Check the wrapper's multicast list (private field _MultiCastDel) once a second.
+         * The game rebuilds its events when the gourd changes (the component re-attaches), which drops our
+         * handler. Check the wrapper's multicast list (private field _MultiCastDel) once a second.
          */
         private bool DrinkStillSubscribed(APawn pawn)
         {
@@ -415,7 +426,7 @@ namespace TransmogKeeper
             {
                 if (_drinkHandler == null) return false;
                 var coll = BUS_EventCollectionCS.Get(pawn);
-                var gs = coll?.Evt_PoleDrinkStateEnd;
+                var gs = coll?.Evt_TriggerWinePartner;
                 if (gs == null) return false;
                 var field = gs.GetType().GetField("_MultiCastDel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                 if (field == null) return true; // cannot tell; assume fine rather than re-adding forever
