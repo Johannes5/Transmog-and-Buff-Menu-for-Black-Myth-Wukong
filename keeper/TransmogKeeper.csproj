@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>TransmogKeeper</AssemblyName>
+    <RootNamespace>TransmogKeeper</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin</OutputPath>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- Reference assemblies: CSharpModBase.dll from the loader, the rest from
+       https://github.com/czastack/B1CSharpLoader/tree/master/GameDll (see fetch-refs.mjs). -->
+  <ItemGroup>
+    <Reference Include="CSharpModBase"><HintPath>lib/CSharpModBase.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnrealEngine"><HintPath>lib/UnrealEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnrealEngine.Runtime"><HintPath>lib/UnrealEngine.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BtlSvr.Main"><HintPath>lib/BtlSvr.Main.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="b1.Native"><HintPath>lib/b1.Native.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="b1.Managed"><HintPath>lib/b1.Managed.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GSE.Core"><HintPath>lib/GSE.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GSE.ProtobufDB"><HintPath>lib/GSE.ProtobufDB.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Protobuf.RunTime"><HintPath>lib/Protobuf.RunTime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Google.Protobuf"><HintPath>lib/Google.Protobuf.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

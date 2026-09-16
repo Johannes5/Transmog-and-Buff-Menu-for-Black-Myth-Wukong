@@ -1,0 +1,10 @@
+node_modules/
+dist/
+settings.json
+keeper/bin/
+keeper/obj/
+keeper/lib/*.dll
+patcher/bin/
+patcher/obj/
+game/
+*.log

@@ -1,0 +1,173 @@
+// TrueWukongConfig.txt access: the lines the tool owns, backups and the number format the mod reads.
+// Everything else in the file (the mod's own settings, comments) is preserved as is.
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseAttrLine, formatAttrLine } from './values.js';
+
+export const CONFIG_REL = path.join('b1', 'Binaries', 'Win64', 'CSharpLoader', 'Mods', 'TrueWukong', 'TrueWukongConfig.txt');
+export const KEYS = { staff: 'staffTransmog', spear: 'spearTransmog' };
+export const TALENT_KEY = 'addTalents';
+export const ATTR_KEY = 'keeperAttr';
+export const OUTFITS_KEY = 'keeperOutfits';   // "Name=id,id;Other name=id,id"  saved looks (TransmogKeeper v1.5+ cycles them)
+export const HOTKEY_KEY = 'keeperOutfitKey';  // "F7", "Ctrl+F7", "None"        key that puts on the next saved look in game
+export const BACKUPS_KEPT = 30;
+
+/** Config number back to a readable one: "12E-1" -> "1.2". */
+export const showNumber = (raw) => (Number.isFinite(parseFloat(raw)) ? String(parseFloat(raw)) : String(raw));
+
+/** Numbers the mod can read on every Windows locale: integers as is, decimals without a decimal point (12E-1). */
+export function configNumber(n) {
+  const v = parseFloat(n);
+  if (Number.isInteger(v)) return String(v);
+  const s = v.toString();
+  if (/e/i.test(s)) return s.toUpperCase().replace('+', '');
+  const decimals = s.split('.')[1].length;
+  return `${Math.round(v * 10 ** decimals)}E-${decimals}`;
+}
+
+export function parseIds(text) {
+  return String(text ?? '')
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/** "Name=1,2;Name2=3" -> [{ name, ids }]. "0" or empty = none. Names keep their case and spaces. */
+export function parseOutfits(text) {
+  const out = [];
+  for (const part of String(text ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const name = part.slice(0, eq).trim();
+    if (!name) continue;
+    out.push({ name, ids: parseIds(part.slice(eq + 1)) });
+  }
+  return out;
+}
+
+export function formatOutfits(list) {
+  return list.length ? list.map((o) => `${o.name}=${o.ids.length ? o.ids.join(',') : '0'}`).join(';') : '0';
+}
+
+/** A saved-outfit name may not contain the separators of the config line. */
+export function validOutfitName(name) {
+  return /^[^=;#]+$/.test(name) && name.trim() === name && name.length <= 40;
+}
+
+// Key names the loader understands (CSharpModBase.Input.Key), from TrueWukong-KeybindList.txt.
+export const VALID_KEYS = new Set(
+  `LBUTTON RBUTTON CANCEL MBUTTON XBUTTON1 XBUTTON2 BACK TAB CLEAR RETURN ENTER SHIFT CONTROL MENU PAUSE CAPITAL
+   ESCAPE SPACE PRIOR NEXT END HOME LEFT UP RIGHT DOWN SELECT PRINT EXECUTE SNAPSHOT INSERT DELETE HELP
+   D0 D1 D2 D3 D4 D5 D6 D7 D8 D9 A B C D E F G H I J K L M N O P Q R S T U V W X Y Z LWIN RWIN APPS SLEEP
+   NUMPAD0 NUMPAD1 NUMPAD2 NUMPAD3 NUMPAD4 NUMPAD5 NUMPAD6 NUMPAD7 NUMPAD8 NUMPAD9 MULTIPLY ADD SEPARATOR SUBTRACT DECIMAL DIVIDE
+   F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 NUMLOCK SCROLL
+   LSHIFT RSHIFT LCONTROL RCONTROL LMENU RMENU OEM_1 OEM_PLUS OEM_COMMA OEM_MINUS OEM_PERIOD OEM_2 OEM_3 OEM_4 OEM_5 OEM_6 OEM_7`
+    .split(/\s+/)
+    .filter(Boolean),
+);
+const MODIFIERS = { ctrl: 'Ctrl', control: 'Ctrl', alt: 'Alt', shift: 'Shift', win: 'Win', windows: 'Win' };
+
+/**
+ * Normalise a hotkey the user typed ("ctrl+f7", "F7", "none") to what the keeper reads ("Ctrl+F7").
+ * Returns null when it is not a valid key.
+ */
+export function normalizeHotkey(text) {
+  const parts = String(text ?? '').trim().split('+').map((p) => p.trim()).filter(Boolean);
+  if (!parts.length || /^(none|off|-)$/i.test(parts.join(''))) return 'None';
+  const key = parts.pop().toUpperCase().replace(/^(\d)$/, 'D$1');
+  if (!VALID_KEYS.has(key)) return null;
+  const mods = [];
+  for (const p of parts) {
+    const m = MODIFIERS[p.toLowerCase()];
+    if (!m || mods.includes(m)) return null;
+    mods.push(m);
+  }
+  return [...mods, key].join('+');
+}
+
+export function readConfig(file) {
+  const raw = fs.readFileSync(file, 'utf8');
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const lines = raw.split(eol);
+  const values = {};
+  for (const l of lines) {
+    const m = l.match(/^([A-Za-z_]+)\s*=\s*(.*)$/);
+    if (m) values[m[1]] = m[2].trim();
+  }
+  const outfits = {};
+  for (const grip of Object.keys(KEYS)) outfits[grip] = parseIds(values[KEYS[grip]]);
+  return {
+    file, raw, eol, lines, outfits, values,
+    talents: parseIds(values[TALENT_KEY]),
+    attrs: parseAttrLine(values[ATTR_KEY]),
+    saved: parseOutfits(values[OUTFITS_KEY]),
+    hotkey: values[HOTKEY_KEY] && values[HOTKEY_KEY] !== '0' ? values[HOTKEY_KEY] : 'None',
+  };
+}
+
+/**
+ * Write the tool's lines. `outfits` = { staff?: ids, spear?: ids }; the options replace the other
+ * lines when given. A dated backup is written first (unless backup = false) and old backups pruned.
+ */
+export function writeConfig(cfg, outfits, { backup = true, talents, values, attrs, saved, hotkey } = {}) {
+  // Always start from what is on disk right now: another CLI window, the game or a text editor may
+  // have changed other lines since this session read the file (an older version re-used the lines
+  // read at startup and silently reverted a transmog chosen from a second window).
+  const fresh = readConfig(cfg.file);
+  const lines = [...fresh.lines];
+  const setLine = (key, value, comment) => {
+    const idx = lines.findIndex((l) => l.startsWith(key + ' ='));
+    const newLine = `${key} = ${value}`;
+    if (idx >= 0) lines[idx] = newLine;
+    else {
+      // append, but keep the file's trailing newline (an empty last element) at the end
+      const end = lines.length && lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+      lines.splice(end, 0, '', `# ${comment} #`, newLine);
+    }
+  };
+  const setIds = (key, ids, comment) => setLine(key, ids.length ? ids.join(',') : '0', comment);
+  for (const grip of Object.keys(KEYS)) {
+    if (grip in outfits) setIds(KEYS[grip], outfits[grip], 'transmog IDs');
+  }
+  if (talents) setIds(TALENT_KEY, talents, 'talents activated on the player');
+  if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);
+  if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');
+  if (saved) setLine(OUTFITS_KEY, formatOutfits(saved), 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)');
+  if (hotkey) setLine(HOTKEY_KEY, hotkey, 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off)');
+  if (backup) backupConfig(cfg.file);
+  fs.writeFileSync(cfg.file, lines.join(fresh.eol), 'utf8');
+  Object.assign(cfg, readConfig(cfg.file));
+}
+
+export function backupConfig(file) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  fs.copyFileSync(file, `${file}.bak-${stamp}`);
+  pruneBackups(file);
+}
+
+export function listBackups(file) {
+  const dir = path.dirname(file);
+  const base = path.basename(file);
+  return fs.readdirSync(dir)
+    .filter((f) => f.startsWith(base + '.bak-'))
+    .map((f) => {
+      const full = path.join(dir, f);
+      const m = f.match(/\.bak-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-(\d{3}))?/);
+      const time = m ? new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5] ?? '000'}Z`) : fs.statSync(full).mtime;
+      return { file: full, name: f, time };
+    })
+    .sort((a, b) => b.time - a.time);
+}
+
+export function pruneBackups(file, keep = BACKUPS_KEPT) {
+  for (const b of listBackups(file).slice(keep)) {
+    try { fs.unlinkSync(b.file); } catch { /* already gone */ }
+  }
+}
+
+/** Put a backup back (the current file is backed up first). */
+export function restoreBackup(cfg, backupFile) {
+  backupConfig(cfg.file);
+  fs.copyFileSync(backupFile, cfg.file);
+  Object.assign(cfg, readConfig(cfg.file));
+}

@@ -1,0 +1,32 @@
+{
+  "name": "wukong-transmog",
+  "version": "1.2.0",
+  "description": "Transmog & Buff Tool for Black Myth: Wukong - looks, set bonuses, weapon effects and values by name",
+  "main": "src/cli.js",
+  "scripts": {
+    "test": "node --test",
+    "patch-mod": "dotnet run --project patcher -- \"X:/SteamLibrary/steamapps/common/BlackMythWukong/b1/Binaries/Win64/CSharpLoader/Mods/TrueWukong/TrueWukong.dll\"",
+    "build-keeper": "dotnet build keeper -c Release",
+    "install-keeper": "dotnet build keeper -c Release && node -e \"require('fs').copyFileSync('keeper/bin/TransmogKeeper.dll','X:/SteamLibrary/steamapps/common/BlackMythWukong/b1/Binaries/Win64/CSharpLoader/Mods/TransmogKeeper/TransmogKeeper.dll');console.log('installed')\"",
+    "fetch-refs": "node keeper/fetch-refs.mjs",
+    "dist": "node scripts/dist.mjs"
+  },
+  "keywords": ["black-myth-wukong", "mod", "transmog", "cli"],
+  "author": "Johannes5",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Johannes5/Transmog-and-Buff-Menu-for-Black-Myth-Wukong.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "wukong-transmog": "./src/cli.js",
+    "transmog-buff-tool": "./src/cli.js"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.2"
+  }
+}
