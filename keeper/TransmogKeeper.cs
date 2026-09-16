@@ -72,7 +72,9 @@ namespace TransmogKeeper
         private readonly Dictionary<string, bool> _bool = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly List<(EBGUAttrFloat attr, float value)> _attrs = new List<(EBGUAttrFloat, float)>();
         private readonly List<(string name, List<int> ids)> _outfits = new List<(string, List<int>)>();
-        private readonly List<int> _soaks = new List<int>();                 // keeperSoaks: soak item IDs kept "drunk"
+        private readonly List<int> _soaks = new List<int>();                 // keeperSoaks: soaks applied on gourd drinks
+        private readonly List<int> _keptBuffs = new List<int>();             // keeperBuffs: buff IDs re-added whenever missing
+        private readonly Dictionary<int, DateTime> _keptBuffNext = new Dictionary<int, DateTime>();
         private readonly Dictionary<int, DateTime> _soakNext = new Dictionary<int, DateTime>();
         private const double SoakRetrySeconds = 5;                            // re-trigger an instant/expired soak effect this often
         private string _hotkeyText = "F7"; // default when keeperOutfitKey is missing
@@ -144,6 +146,7 @@ namespace TransmogKeeper
                 Stage("look", () => KeepLook(pawn, name, data));
                 Stage("talents", () => KeepTalents(pawn, name));
                 Stage("soaks", () => KeepSoaks(pawn, name));
+                Stage("buffs", () => KeepBuffs(pawn, name));
                 Stage("values", () => KeepValues(pawn, name));
                 Stage("snapshot", () => WriteAttrSnapshot(pawn));
                 Stage("owned", () => WriteOwnedSnapshot(pawn));
@@ -435,6 +438,29 @@ namespace TransmogKeeper
             }
             catch { return true; }
         }
+
+        // ---------- kept buffs ----------
+        // keeperBuffs = buff IDs the keeper re-adds (source type 40, default duration) whenever they are
+        // missing, at most every 5 s each. Used for "Deathstinger venom": buff 92313 only adds poison
+        // build-up and ends at once, so re-adding it keeps the build-up topped up and the next hit you
+        // take or deal turns it into the Poisoned state.
+
+        private void KeepBuffs(APawn pawn, string name)
+        {
+            if (_keptBuffs.Count == 0) return;
+            if (Get(pawn, Hp) <= 0f) return;
+            var now = DateTime.UtcNow;
+            foreach (int id in _keptBuffs)
+            {
+                DateTime next;
+                if (_keptBuffNext.TryGetValue(id, out next) && now < next) continue;
+                if (BGUFunctionLibraryCS.BGUHasBuffByID(pawn, id)) { _keptBuffNext[id] = now.AddSeconds(1); continue; }
+                BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, id, (EBuffSourceType)40, 0f);
+                _keptBuffNext[id] = now.AddSeconds(5);
+                if (!_keptLogged.Contains(id)) { _keptLogged.Add(id); Log($"Kept buff {id} added on {name} (re-added whenever it is missing)"); }
+            }
+        }
+        private readonly HashSet<int> _keptLogged = new HashSet<int>();
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
 
@@ -781,6 +807,8 @@ namespace TransmogKeeper
             _attrs.Clear();
             _soaks.Clear();
             _soakNext.Clear();
+            _keptBuffs.Clear();
+            _keptBuffNext.Clear();
             _presets.Clear();
             _lastPawn = "";       // force a re-check of the look
             _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
@@ -805,6 +833,7 @@ namespace TransmogKeeper
                     else if (key == "keeperOutfits") ParseOutfits(value);
                     else if (key == "keeperPresets") ParsePresets(value);
                     else if (key == "keeperSoaks") ParseIds(value, _soaks);
+                    else if (key == "keeperBuffs") ParseIds(value, _keptBuffs);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
                     else
                     {
@@ -843,6 +872,7 @@ namespace TransmogKeeper
             public string Name;
             public readonly List<int> Talents = new List<int>();
             public readonly List<int> Soaks = new List<int>();
+            public readonly List<int> Buffs = new List<int>();
             public readonly List<(string key, string on, string off)> Values = new List<(string, string, string)>();
             public string Key = "None";
         }
@@ -863,6 +893,7 @@ namespace TransmogKeeper
                     string k = part.Substring(0, eq).Trim(), v = part.Substring(eq + 1).Trim();
                     if (k == "talents") ParseIds(v, p.Talents);
                     else if (k == "soaks") ParseIds(v, p.Soaks);
+                    else if (k == "buffs") ParseIds(v, p.Buffs);
                     else if (k == "key") p.Key = v.Length == 0 ? "None" : v;
                     else if (k == "values")
                         foreach (string triple in v.Split(','))
@@ -925,14 +956,17 @@ namespace TransmogKeeper
                 Action<string, string> set = (k, v) => { int i = lines.FindIndex(x => x.StartsWith(k + " =")); if (i >= 0) lines[i] = $"{k} = {v}"; else lines.Add($"{k} = {v}"); };
                 var talents = new List<int>(); ParseIds(get("addTalents"), talents);
                 var soaks = new List<int>(); ParseIds(get("keeperSoaks"), soaks);
-                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains)
+                var kept = new List<int>(); ParseIds(get("keeperBuffs"), kept);
+                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains) && p.Buffs.All(kept.Contains)
                     && p.Values.All(v => { float cur, want; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.on, NumberStyles.Float, CultureInfo.InvariantCulture, out want) && Math.Abs(cur - want) < 1e-4f; });
                 bool turnOn = !on;
                 foreach (int id in p.Talents) { if (turnOn) { if (!talents.Contains(id)) talents.Add(id); } else talents.Remove(id); }
                 foreach (int id in p.Soaks) { if (turnOn) { if (!soaks.Contains(id)) soaks.Add(id); } else soaks.Remove(id); }
+                foreach (int id in p.Buffs) { if (turnOn) { if (!kept.Contains(id)) kept.Add(id); } else kept.Remove(id); }
                 foreach (var v in p.Values) set(v.key, turnOn ? v.on : v.off);
                 if (p.Talents.Count > 0) set("addTalents", talents.Count == 0 ? "0" : string.Join(",", talents));
                 if (p.Soaks.Count > 0) set("keeperSoaks", soaks.Count == 0 ? "0" : string.Join(",", soaks));
+                if (p.Buffs.Count > 0) set("keeperBuffs", kept.Count == 0 ? "0" : string.Join(",", kept));
                 File.WriteAllLines(ConfigPath, lines);
                 Log($"Preset '{name}' switched {(turnOn ? "ON" : "OFF")} by key");
                 LoadConfig();

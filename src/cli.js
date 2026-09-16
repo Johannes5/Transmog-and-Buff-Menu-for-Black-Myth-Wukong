@@ -27,7 +27,7 @@ import {
   CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, validOutfitName,
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
-import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, validPresetName } from './presets.js';
+import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, validPresetName, coveredByActivePresets } from './presets.js';
 import { readOwned, isOwned, isSetOwned } from './owned.js';
 import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
@@ -129,14 +129,17 @@ function savedLine(cfg, value) {
   return keeperInstalled(cfg.file) ? 'Saved. Applies in game within a second.' + respawn : 'Saved. Press Ctrl+Enter in game (or reload the save).' + respawn;
 }
 
-/** Everything the Buffs screen treats as active: talents (addTalents) and soaks (keeperSoaks). */
-const activeBuffIds = (cfg) => [...cfg.talents, ...cfg.soaks];
+/** Everything the Buffs screen treats as active: talents (addTalents), soaks (keeperSoaks) and kept buffs (keeperBuffs). */
+const activeBuffIds = (cfg) => [...cfg.talents, ...cfg.soaks, ...cfg.buffs];
 
-/** Split a list of buff IDs into the two config lines, by catalog entry. */
+/** Split a list of buff IDs into the three config lines, by catalog entry. */
 function splitBuffs(cat, ids) {
-  const talents = [], soaks = [];
-  for (const id of ids) (talentById(cat, id).line === 'soak' ? soaks : talents).push(id);
-  return { talents, soaks };
+  const talents = [], soaks = [], buffs = [];
+  for (const id of ids) {
+    const line = talentById(cat, id).line;
+    (line === 'soak' ? soaks : line === 'buff' ? buffs : talents).push(id);
+  }
+  return { talents, soaks, buffs };
 }
 
 function describeTalents(cfg) {
@@ -659,7 +662,7 @@ async function interactive(cfg, opts) {
       pageSize: 8,
       choices: [
         { name: `Transmog   change how my gear looks          (now: ${outfitSummary(cfg)})`, value: 'transmog' },
-        { name: `Buffs      set bonuses, weapon effects, soaks, value changes   (${activeBuffIds(cfg).length + VALUES.filter((v) => !isDefault(v, cfg.values[v.key])).length + cfg.attrs.length} active)`, value: 'buffs' },
+        { name: `Buffs      set bonuses, weapon effects, soaks, value changes   (${activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).length + VALUES.filter((v) => !isDefault(v, cfg.values[v.key]) && !coveredByActivePresets(cfg).keys.has(v.key)).length + cfg.attrs.length + cfg.presets.filter((p) => presetActive(p, cfg)).length} active)`, value: 'buffs' },
         { name: 'Undo       restore an earlier change', value: 'undo' },
         { name: 'Doctor     check the install and the logs when something does not work', value: 'doctor' },
         { name: 'Options    trainer compatibility, game folder, status, uninstall', value: 'options' },
@@ -836,12 +839,12 @@ async function interactive(cfg, opts) {
           { name: '+ save the active buffs as a named buff', value: '__preset_save__' },
           ...(cfg.presets.length ? [new Separator('Named buffs (Enter: on/off, key, edit)')] : []),
           ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: describePreset(p, cat, (id) => fullName(talentById(cat, id))) })),
-          ...(activeBuffIds(cfg).length || changedValues().length || cfg.attrs.length ? [new Separator('Active')] : []),
-          ...activeBuffIds(cfg).map((id) => {
+          ...(activeBuffIds(cfg).some((id) => !coveredByActivePresets(cfg).ids.has(id)) || changedValues().some((v) => !coveredByActivePresets(cfg).keys.has(v.key)) || cfg.attrs.length ? [new Separator('Active (on their own; parts of a named buff that is on are listed under it)')] : []),
+          ...activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).map((id) => {
             const t = talentById(cat, id);
             return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
           }),
-          ...changedValues().map((v) => ({ name: `x reset: ${valueLabel(v)}${lite() && !v.applies.includes('lite') ? '   (off while Trainer compatibility is on)' : ''}`, value: `val:${v.key}`, description: `${v.desc} Enter to change it or reset it to the default.` })),
+          ...changedValues().filter((v) => !coveredByActivePresets(cfg).keys.has(v.key)).map((v) => ({ name: `x reset: ${valueLabel(v)}${lite() && !v.applies.includes('lite') ? '   (off while Trainer compatibility is on)' : ''}`, value: `val:${v.key}`, description: `${v.desc} Enter to change it or reset it to the default.` })),
           ...cfg.attrs.map((a) => ({ name: `x unlock: ${attrByName(a.name)?.label ?? a.name} locked at ${a.value}`, value: `lock:${a.name}`, description: 'An attribute lock (advanced). Enter to change or remove it.' })),
           ...(cfg.recent.length || cfg.recentValues.length ? [new Separator('Recently active')] : []),
           ...cfg.recent.map((id) => {

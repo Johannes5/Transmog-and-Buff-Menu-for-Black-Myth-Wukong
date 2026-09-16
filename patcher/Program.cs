@@ -259,6 +259,20 @@ int applied = 0;
     applied++;
 }
 
+// ---- 10. no extra Focus while charging --------------------------------------
+// The mod's ChargeFocus loop adds 3 Focus per tick while a heavy attack is charged; with a full
+// 4-point gauge that re-hits the cap every tick (the bar flickers and the "point gained" sound stutters).
+{
+    var cf = main.Methods.First(m => m.Name == "ChargeFocus");
+    var il = cf.Body.GetILProcessor();
+    cf.Body.Instructions.Clear();
+    cf.Body.ExceptionHandlers.Clear();
+    cf.Body.Variables.Clear();
+    il.Emit(OpCodes.Ret);
+    Console.WriteLine("[10] Extra Focus while charging disabled (ChargeFocus is a no-op)");
+    applied++;
+}
+
 // ---- 6. marker so the tool can tell a patched DLL without the .orig --------
 {
     const string marker = "TransmogTool-patched";

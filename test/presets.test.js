@@ -19,8 +19,8 @@ test('presets round-trip through the config line', () => {
   assert.equal(formatPresets([]), '0');
   assert.deepEqual(parsePresets('0'), []);
   assert.deepEqual(parsePresets('Broken{values=nosuchkey:1:0};Ok{talents=1,x,2;key=Ctrl+F8}'), [
-    { name: 'Broken', talents: [], soaks: [], values: {}, key: 'None' },
-    { name: 'Ok', talents: [1, 2], soaks: [], values: {}, key: 'Ctrl+F8' },
+    { name: 'Broken', talents: [], soaks: [], buffs: [], values: {}, key: 'None' },
+    { name: 'Ok', talents: [1, 2], soaks: [], buffs: [], values: {}, key: 'Ctrl+F8' },
   ]);
   assert.ok(validPresetName('Defence +40%'));
   assert.ok(!validPresetName('a{b'));
@@ -36,7 +36,8 @@ test('a preset is on when all of its parts are in effect; toggling writes the ri
   assert.equal(presetActive(speed, cfg), false);
   writeConfig(cfg, {}, { backup: false, ...presetChange(stinger, cfg, true) });
   assert.deepEqual(cfg.talents, [901012, 105013, 901411]);
-  assert.deepEqual(cfg.soaks, [2313]);
+  assert.deepEqual(cfg.buffs, [92313]);
+  assert.deepEqual(cfg.soaks, []);
   assert.equal(presetActive(stinger, cfg), true);
   writeConfig(cfg, {}, { backup: false, ...presetChange(speed, cfg, true) });
   assert.equal(cfg.values.wukongSpeed, '2');
@@ -56,5 +57,5 @@ test('presets line round-trips through writeConfig and a preset can be built fro
   assert.equal(cfg.hasPresetsLine, true);
   assert.deepEqual(cfg.presets, DEFAULT_PRESETS);
   const mine = presetFromCurrent('Mine', cfg);
-  assert.deepEqual(mine, { name: 'Mine', talents: [901012], soaks: [], values: { wukongSpeed: ['2', '1'] }, key: 'None' });
+  assert.deepEqual(mine, { name: 'Mine', talents: [901012], soaks: [], buffs: [], values: { wukongSpeed: ['2', '1'] }, key: 'None' });
 });
