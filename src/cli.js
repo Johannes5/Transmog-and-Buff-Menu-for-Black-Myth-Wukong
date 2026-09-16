@@ -27,6 +27,7 @@ import {
   CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, validOutfitName,
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
+import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, validPresetName } from './presets.js';
 import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
 
@@ -318,6 +319,60 @@ function cmdOutfits(cfg, opts) {
     writeConfig(cfg, {}, { backup: !opts['no-backup'], hotkey: key });
     console.log(key === 'None' ? 'In-game key removed.' : `${key} now puts on the next saved look in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.`);
   } else throw new Error('usage: wukong-transmog outfits [save <name> | wear <name> | delete <name> | key <key|none>]');
+}
+
+// ---------- named buffs (presets) ----------
+
+function presetByName(cfg, query) {
+  const q = String(query ?? '').trim().toLowerCase();
+  if (!q) throw new Error('Which named buff? Run "wukong-transmog presets" to list them.');
+  let hits = cfg.presets.filter((p) => p.name.toLowerCase() === q);
+  if (!hits.length) hits = cfg.presets.filter((p) => p.name.toLowerCase().includes(q));
+  if (hits.length === 1) return hits[0];
+  if (!hits.length) throw new Error(`No named buff matches "${query}". Named buffs: ${cfg.presets.map((p) => p.name).join(', ') || 'none'}`);
+  throw new Error(`"${query}" is ambiguous: ${hits.map((p) => p.name).join(', ')}`);
+}
+
+function describePresets(cfg) {
+  if (!cfg.presets.length) return '  (no named buffs)';
+  const cat = loadTalentCatalog(cfg.file);
+  const nameOf = (id) => fullName(talentById(cat, id));
+  return cfg.presets.map((p) => `  [${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(26)} ${p.key !== 'None' ? ('key ' + p.key).padEnd(12) : ''.padEnd(12)} ${describePreset(p, cat, nameOf)}`).join('\n');
+}
+
+function cmdPresets(cfg, opts) {
+  const sub = (opts._[1] ?? '').toLowerCase();
+  const rest = opts._.slice(2);
+  if (!sub) {
+    console.log('Named buffs ([x] = on):');
+    console.log(describePresets(cfg));
+    console.log('\nCommands: presets on <name> | presets off <name> | presets save <name> (from the active buffs) | presets delete <name> | presets key <name> <F8|Ctrl+F8|none>');
+    return;
+  }
+  const backup = !opts['no-backup'];
+  if (sub === 'on' || sub === 'off') {
+    const p = presetByName(cfg, rest.join(' '));
+    writeConfig(cfg, {}, { backup, ...presetChange(p, cfg, sub === 'on') });
+    console.log(`"${p.name}" is ${sub}.\n${savedLine(cfg)}`);
+  } else if (sub === 'save') {
+    const name = rest.join(' ');
+    if (!validPresetName(name)) throw new Error('usage: wukong-transmog presets save <name>   (no "{", "}", ";", "=" or "#", up to 40 characters)');
+    const presets = cfg.presets.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
+    presets.push(presetFromCurrent(name, cfg));
+    writeConfig(cfg, {}, { backup, presets });
+    console.log(`Saved the active buffs as "${name}".`);
+  } else if (sub === 'delete' || sub === 'remove') {
+    const p = presetByName(cfg, rest.join(' '));
+    writeConfig(cfg, {}, { backup, presets: cfg.presets.filter((x) => x !== p) });
+    console.log(`Deleted "${p.name}".`);
+  } else if (sub === 'key') {
+    const p = presetByName(cfg, rest.slice(0, -1).join(' '));
+    const key = normalizeHotkey(rest[rest.length - 1]);
+    if (!key) throw new Error('Not a key the game understands. Examples: F8, Ctrl+F8, NUMPAD1, none.');
+    p.key = key;
+    writeConfig(cfg, {}, { backup, presets: cfg.presets });
+    console.log(key === 'None' ? `"${p.name}" has no in-game key.` : `${key} toggles "${p.name}" in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.`);
+  } else throw new Error('usage: wukong-transmog presets [on|off|save|delete <name> | key <name> <key>]');
 }
 
 // ---------- custom values ----------
@@ -742,6 +797,10 @@ async function interactive(cfg, opts) {
           { name: '- back', value: '__back__' },
           { name: '+ add a buff', value: '__add__' },
           { name: '+ add a custom buff (change a value: regen, speed, attack...)', value: '__value__' },
+          { name: '+ save the active buffs as a named buff', value: '__preset_save__' },
+          ...(cfg.presets.length ? [new Separator('Named buffs (Enter: on/off, key, edit)')] : []),
+          ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: describePreset(p, cat, (id) => fullName(talentById(cat, id))) })),
+          ...(activeBuffIds(cfg).length || changedValues().length || cfg.attrs.length ? [new Separator('Active')] : []),
           ...activeBuffIds(cfg).map((id) => {
             const t = talentById(cat, id);
             return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
@@ -758,6 +817,17 @@ async function interactive(cfg, opts) {
       });
       if (pick === '__back__') return;
       if (pick === '__value__') { await pickValue(); continue; }
+      if (pick === '__preset_save__') {
+        const name = await ask('Name for the active buffs (talents, soaks and changed values)');
+        if (name === null) continue;
+        if (!validPresetName(name)) { console.log('  Names cannot contain "{", "}", ";", "=" or "#" and are at most 40 characters.\n'); continue; }
+        const presets = cfg.presets.filter((p) => p.name.toLowerCase() !== name.toLowerCase());
+        presets.push(presetFromCurrent(name, cfg));
+        writeConfig(cfg, {}, { backup, presets });
+        console.log(`  Saved "${name}".\n`);
+        continue;
+      }
+      if (pick.startsWith('preset:')) { await menuPreset(cfg.presets.find((p) => p.name === pick.slice(7))); continue; }
       if (pick.startsWith('val:')) { await editValue(valueByKey(pick.slice(4))); continue; }
       if (pick.startsWith('reval:')) {
         const r = cfg.recentValues.find((x) => x.key === pick.slice(6));
@@ -803,6 +873,63 @@ async function interactive(cfg, opts) {
       writeConfig(cfg, {}, { backup, ...splitBuffs(cat, talents) });
       saved();
       await showBuffImpact(cfg, before);
+    }
+
+    // ----- one named buff -----
+    async function menuPreset(p) {
+      if (!p) return;
+      for (;;) {
+        const on = presetActive(p, cfg);
+        const what = await select({
+          message: `"${p.name}" (${on ? 'ON' : 'off'}): ${describePreset(p, cat, (id) => fullName(talentById(cat, id)))}`,
+          choices: [
+            { name: '- back', value: '__back__' },
+            { name: on ? 'Turn it off' : 'Turn it on', value: 'toggle' },
+            { name: `In-game key   ${p.key}`, value: 'key', description: 'Pressing it in game switches this named buff on or off. Examples: F8, Ctrl+F8, NUMPAD1; "none" removes it.' },
+            { name: 'Replace its contents with the active buffs', value: 'update' },
+            { name: 'Rename', value: 'rename' },
+            { name: 'Delete', value: 'delete' },
+          ],
+        });
+        if (what === '__back__') return;
+        if (what === 'toggle') {
+          const before = keeperInstalled(cfg.file) ? readAttrSnapshot(cfg.file) : null;
+          writeConfig(cfg, {}, { backup, ...presetChange(p, cfg, !on) });
+          saved();
+          if (!on) await showBuffImpact(cfg, before);
+          continue;
+        }
+        if (what === 'key') {
+          const answer = await ask('Key that toggles this named buff in game (e.g. F8, Ctrl+F8; "none" = off)', p.key);
+          if (answer === null) continue;
+          const key = normalizeHotkey(answer);
+          if (!key) { console.log('  Not a key the game understands. Examples: F8, Ctrl+F8, NUMPAD1.\n'); continue; }
+          p.key = key;
+          writeConfig(cfg, {}, { backup, presets: cfg.presets });
+          console.log(key === 'None' ? '  In-game key removed.\n' : `  ${key} toggles "${p.name}" in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.\n`);
+          continue;
+        }
+        if (what === 'update') {
+          const fresh = presetFromCurrent(p.name, cfg);
+          p.talents = fresh.talents; p.soaks = fresh.soaks; p.values = fresh.values;
+          writeConfig(cfg, {}, { backup, presets: cfg.presets });
+          console.log('  Updated.\n');
+          continue;
+        }
+        if (what === 'rename') {
+          const name = await ask('New name', p.name);
+          if (name === null) continue;
+          if (!validPresetName(name)) { console.log('  Names cannot contain "{", "}", ";", "=" or "#" and are at most 40 characters. Unchanged.\n'); continue; }
+          p.name = name;
+          writeConfig(cfg, {}, { backup, presets: cfg.presets });
+          continue;
+        }
+        if (what === 'delete') {
+          writeConfig(cfg, {}, { backup, presets: cfg.presets.filter((x) => x !== p) });
+          console.log(`  Deleted "${p.name}".\n`);
+          return;
+        }
+      }
     }
 
     // ----- custom buffs: the mod's numeric values -----
@@ -964,7 +1091,9 @@ const HELP = `Transmog & Buff Tool ${VERSION}  (wukong-transmog)
   wukong-transmog outfits              saved looks
       outfits save|wear|delete <name>
       outfits key <F7|Ctrl+F7|none>    in-game key that puts on the next saved look
-  wukong-transmog buffs                active buffs (set bonuses, weapon and piece effects, curios)
+  wukong-transmog presets              named buffs: bundles of buffs and values with an optional in-game key
+      presets on|off|save|delete <name>, presets key <name> <F8|none>
+  wukong-transmog buffs                active buffs (set bonuses, weapon and piece effects, curios, soaks)
       buffs list [words]               browse, grouped by category and armor set
       buffs info <name|id>             what a buff does
       buffs add|remove <name|id>...    e.g. buffs add "gilded radiance 4-piece"
@@ -1100,6 +1229,7 @@ async function main() {
     noteGameUpdate(gameDirOf(file));
   }
   const cfg = readConfig(file);
+  if (!cfg.hasPresetsLine) writeConfig(cfg, {}, { backup: false, presets: DEFAULT_PRESETS }); // first start with this version: the default named buffs
   if (cmd === 'show') return cmdShow(cfg);
   if (cmd === 'set') return cmdSet(cfg, opts);
   if (cmd === 'mod') return cmdMod(cfg, opts);
@@ -1108,6 +1238,7 @@ async function main() {
   if (cmd === 'undo') return cmdUndo(cfg, opts);
   if (cmd === 'outfits' || cmd === 'looks') return cmdOutfits(cfg, opts);
   if (cmd === 'doctor') return cmdDoctor(cfg);
+  if (cmd === 'presets' || cmd === 'named') return cmdPresets(cfg, opts);
   if (cmd) throw new Error(`Unknown command "${cmd}".\n\n${HELP}`);
   return interactive(cfg, opts);
 }

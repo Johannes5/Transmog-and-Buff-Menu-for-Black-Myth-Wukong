@@ -43,7 +43,7 @@ namespace TransmogKeeper
     public class TransmogKeeper : ICSharpMod
     {
         public string Name => "TransmogKeeper";
-        public string Version => "1.6.0";
+        public string Version => "1.7.0";
 
         private static readonly string BaseDir = AppDomain.CurrentDomain.BaseDirectory; // b1/Binaries/Win64
         private static readonly string ConfigPath = Path.Combine(BaseDir, "CSharpLoader", "Mods", "TrueWukong", "TrueWukongConfig.txt");
@@ -716,6 +716,7 @@ namespace TransmogKeeper
             _attrs.Clear();
             _soaks.Clear();
             _soakNext.Clear();
+            _presets.Clear();
             _lastPawn = "";       // force a re-check of the look
             _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
             _lastSpeedPawn = "";  // re-apply speed
@@ -737,6 +738,7 @@ namespace TransmogKeeper
                     else if (key == "addTalents") ParseIds(value, _talents);
                     else if (key == "keeperAttr") ParseAttrs(value);
                     else if (key == "keeperOutfits") ParseOutfits(value);
+                    else if (key == "keeperPresets") ParsePresets(value);
                     else if (key == "keeperSoaks") ParseIds(value, _soaks);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
                     else
@@ -762,6 +764,117 @@ namespace TransmogKeeper
             }
             try { SyncHotkey(); }
             catch (Exception e) { Log("hotkey error: " + e.Message); }
+            try { SyncPresetKeys(); }
+            catch (Exception e) { Log("preset key error: " + e.Message); }
+        }
+
+        // ---------- named buffs (presets) and their in-game keys ----------
+        // keeperPresets = Name{talents=ids;soaks=ids;values=key:on:off,...;key=F8};Name2{...}
+        // A key press toggles the whole bundle: on = add its talents and soaks and set its values to "on";
+        // off = remove them and set its values to "off". The config is rewritten, so the tool sees it too.
+
+        private class Preset
+        {
+            public string Name;
+            public readonly List<int> Talents = new List<int>();
+            public readonly List<int> Soaks = new List<int>();
+            public readonly List<(string key, string on, string off)> Values = new List<(string, string, string)>();
+            public string Key = "None";
+        }
+        private readonly List<Preset> _presets = new List<Preset>();
+        private readonly Dictionary<string, (CSharpModBase.Input.HotKeyItem item, string key)> _presetKeys = new Dictionary<string, (CSharpModBase.Input.HotKeyItem, string)>();
+
+        private void ParsePresets(string value)
+        {
+            _presets.Clear();
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(value ?? "", @"([^{};]+)\{([^}]*)\}"))
+            {
+                var p = new Preset { Name = m.Groups[1].Value.Trim() };
+                if (p.Name.Length == 0) continue;
+                foreach (string part in m.Groups[2].Value.Split(';'))
+                {
+                    int eq = part.IndexOf('=');
+                    if (eq < 0) continue;
+                    string k = part.Substring(0, eq).Trim(), v = part.Substring(eq + 1).Trim();
+                    if (k == "talents") ParseIds(v, p.Talents);
+                    else if (k == "soaks") ParseIds(v, p.Soaks);
+                    else if (k == "key") p.Key = v.Length == 0 ? "None" : v;
+                    else if (k == "values")
+                        foreach (string triple in v.Split(','))
+                        {
+                            string[] t = triple.Split(':');
+                            if (t.Length >= 2 && t[0].Trim().Length > 0) p.Values.Add((t[0].Trim(), t[1].Trim(), t.Length > 2 ? t[2].Trim() : "0"));
+                        }
+                }
+                _presets.Add(p);
+            }
+        }
+
+        /** One loader key bind per preset with a key; re-bound when the key changes, disabled when removed. */
+        private void SyncPresetKeys()
+        {
+            foreach (var p in _presets)
+            {
+                (CSharpModBase.Input.HotKeyItem item, string key) bound;
+                bool have = _presetKeys.TryGetValue(p.Name, out bound);
+                if (have && bound.key == p.Key) continue;
+                CSharpModBase.Input.ModifierKeys mods; CSharpModBase.Input.Key key;
+                if (!ParseHotkey(p.Key, out mods, out key)) { Log($"preset '{p.Name}': key '{p.Key}' unknown; disabled"); mods = CSharpModBase.Input.ModifierKeys.None; key = CSharpModBase.Input.Key.None; }
+                if (!have)
+                {
+                    if (key == CSharpModBase.Input.Key.None) { _presetKeys[p.Name] = (null, p.Key); continue; }
+                    string name = p.Name;
+                    var item = Utils.RegisterKeyBind(mods, key, () => TogglePreset(name));
+                    if (item != null) { item.Label = "TransmogKeeper: " + name; item.RunOnGameThread = true; }
+                    _presetKeys[name] = (item, p.Key);
+                }
+                else
+                {
+                    if (bound.item == null && key != CSharpModBase.Input.Key.None)
+                    {
+                        string name = p.Name;
+                        var item = Utils.RegisterKeyBind(mods, key, () => TogglePreset(name));
+                        if (item != null) { item.Label = "TransmogKeeper: " + name; item.RunOnGameThread = true; }
+                        _presetKeys[name] = (item, p.Key);
+                    }
+                    else { bound.item?.WithKey(mods, key); _presetKeys[p.Name] = (bound.item, p.Key); }
+                }
+                Log(key == CSharpModBase.Input.Key.None ? $"Preset '{p.Name}': no key" : $"Preset '{p.Name}' bound to {p.Key}");
+            }
+            // presets that disappeared from the config: unbind their key
+            foreach (var gone in _presetKeys.Keys.Where(n => !_presets.Any(p => p.Name == n)).ToList())
+            {
+                _presetKeys[gone].item?.WithKey(CSharpModBase.Input.ModifierKeys.None, CSharpModBase.Input.Key.None);
+                _presetKeys.Remove(gone);
+            }
+        }
+
+        private void TogglePreset(string name)
+        {
+            try
+            {
+                var p = _presets.FirstOrDefault(x => x.Name == name);
+                if (p == null) return;
+                var lines = File.ReadAllLines(ConfigPath).ToList();
+                Func<string, string> get = k => { var l = lines.FirstOrDefault(x => x.StartsWith(k + " =")); return l == null ? "" : l.Substring(l.IndexOf('=') + 1).Trim(); };
+                Action<string, string> set = (k, v) => { int i = lines.FindIndex(x => x.StartsWith(k + " =")); if (i >= 0) lines[i] = $"{k} = {v}"; else lines.Add($"{k} = {v}"); };
+                var talents = new List<int>(); ParseIds(get("addTalents"), talents);
+                var soaks = new List<int>(); ParseIds(get("keeperSoaks"), soaks);
+                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains)
+                    && p.Values.All(v => { float cur, want; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.on, NumberStyles.Float, CultureInfo.InvariantCulture, out want) && Math.Abs(cur - want) < 1e-4f; });
+                bool turnOn = !on;
+                foreach (int id in p.Talents) { if (turnOn) { if (!talents.Contains(id)) talents.Add(id); } else talents.Remove(id); }
+                foreach (int id in p.Soaks) { if (turnOn) { if (!soaks.Contains(id)) soaks.Add(id); } else soaks.Remove(id); }
+                foreach (var v in p.Values) set(v.key, turnOn ? v.on : v.off);
+                if (p.Talents.Count > 0) set("addTalents", talents.Count == 0 ? "0" : string.Join(",", talents));
+                if (p.Soaks.Count > 0) set("keeperSoaks", soaks.Count == 0 ? "0" : string.Join(",", soaks));
+                File.WriteAllLines(ConfigPath, lines);
+                Log($"Preset '{name}' switched {(turnOn ? "ON" : "OFF")} by key");
+                LoadConfig();
+                if (FullMode()) Stage("reload", ReloadTrueWukong);
+                Utils.TryRunOnGameThread(Tick);
+            }
+            catch (Exception e) { Log("preset toggle error: " + e.Message); }
         }
 
         // ---------- saved looks and the in-game key ----------

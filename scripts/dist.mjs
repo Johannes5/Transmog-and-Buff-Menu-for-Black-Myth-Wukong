@@ -105,10 +105,12 @@ for (const key of ['staffTransmog', 'spearTransmog', 'addTalents', 'keeperAttr']
 for (const [key, val] of Object.entries({ healthRegen: 0, manaRegen: 0, spiritRegen: 0, vesselRegen: 0, focusRegen: 0, wukongSpeed: 1, attackMultiplier: 1, defenseMultiplier: 1, attackMultiplierAlt: 1, defenseMultiplierAlt: 1 })) {
   cfgText = cfgText.replace(new RegExp(`^${key} = .*$`, 'm'), `${key} = ${val}`);
 }
-// the tool's own keys, visible in the shipped config (F7 cycles saved looks by default)
+// the tool's own keys, visible in the shipped config (F7 cycles saved looks by default; the default named buffs)
+const { DEFAULT_PRESETS, formatPresets } = await import('../src/presets.js');
 for (const [key, val, comment] of [
   ['keeperOutfits', '0', 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)'],
   ['keeperOutfitKey', 'F7', 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off)'],
+  ['keeperPresets', formatPresets(DEFAULT_PRESETS), 'named buffs: Name{talents=ids;soaks=ids;values=key:on:off;key=F8} (see wukong-transmog presets)'],
 ]) {
   const line = new RegExp(`^${key} = .*$`, 'm');
   if (line.test(cfgText)) cfgText = cfgText.replace(line, () => `${key} = ${val}`);

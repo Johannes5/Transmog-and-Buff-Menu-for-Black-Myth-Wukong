@@ -63,6 +63,16 @@ wukong-transmog outfits delete boss
 wukong-transmog outfits key Ctrl+F7     # none = off
 ```
 
+## Named buffs (keeperPresets)
+
+`keeperPresets = Name{talents=ids;soaks=ids;values=key:on:off,...;key=F8};Name2{...}` (src/presets.js). A
+preset is "on" when all its talents are in `addTalents`, all its soaks in `keeperSoaks` and every value
+equals its `on` number; switching it off removes the IDs and writes the `off` numbers (the defaults at
+the time the preset was saved). The tool seeds `DEFAULT_PRESETS` when the line is missing. TransmogKeeper
+v1.7+ registers one loader key bind per preset with a key and toggles the preset by rewriting the config
+lines itself (then LoadConfig, and True Wukong's reload in full mode), so the tool and the game agree.
+Names may not contain `{ } ; = #`.
+
 ## Values in full mode
 
 True Wukong reads its config at start and on Ctrl+Enter only. Since keeper v1.6 a config change in full
