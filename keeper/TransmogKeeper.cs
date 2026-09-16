@@ -526,6 +526,30 @@ namespace TransmogKeeper
                 foreach (var c in GameDBRuntime.GetTBConsumeDesc().List)
                     sb.AppendLine($"C\t{c.Id}\t{c.Type}\t{c.SkillId}\t{c.WinePartnerTrigger}\t{string.Join(",", c.ConsumeEffect.Select(e => $"{e.EffectType}:{e.EffectId}"))}");
             });
+            section("PASSIVES\tid\tfields (name=value ...)", () =>
+            {
+                // passive skills referenced by talents (PassiveSkillIDs); fields dumped by reflection
+                var ids = new SortedSet<int>();
+                foreach (var t in GameDBRuntime.GetTBTalentSDesc().List)
+                    foreach (var s in (t.PassiveSkillIDs ?? "").Split(',', ';', '|')) { int id; if (int.TryParse(s.Trim(), out id)) ids.Add(id); }
+                foreach (int id in ids)
+                {
+                    object v;
+                    try { v = BGW_GameDB.GetPassiveSkillDescDic(id); } catch (Exception ex) { sb.AppendLine($"P\t{id}\terror {ex.Message}"); continue; }
+                    if (v == null) { sb.AppendLine($"P\t{id}\t(null)"); continue; }
+                    var e = new System.Collections.DictionaryEntry(id, v);
+                    var parts = new List<string>();
+                    foreach (var p in v.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (p.GetIndexParameters().Length > 0 || p.Name == "Parser" || p.Name == "Descriptor") continue;
+                        object val;
+                        try { val = p.GetValue(v); } catch { continue; }
+                        string s = val is System.Collections.IEnumerable en && !(val is string) ? string.Join("|", en.Cast<object>().Select(x => x?.ToString())) : val?.ToString();
+                        if (!string.IsNullOrEmpty(s) && s != "0" && s != "False") parts.Add($"{p.Name}={s.Replace("\n", " ").Replace("\t", " ")}");
+                    }
+                    sb.AppendLine($"P\t{e.Key}\t{string.Join(" ", parts)}");
+                }
+            });
             section("ITEMS\tid\tname\ttypeName\titemType\tpackage\tparam1\tparam2\tbrief\tdesc\teffectDesc\thudEffectDesc", () =>
             {
                 var wanted = new HashSet<ResB1.ItemPackageType> { ResB1.ItemPackageType.WinePartner, ResB1.ItemPackageType.Wine, ResB1.ItemPackageType.WineUpgrade, ResB1.ItemPackageType.Recover, ResB1.ItemPackageType.SpecialEffect, ResB1.ItemPackageType.SpecialElixir, ResB1.ItemPackageType.AtkStrengthen, ResB1.ItemPackageType.DefStrengthen, ResB1.ItemPackageType.Resistance };
