@@ -520,6 +520,11 @@ async function interactive(cfg, opts) {
   const pool = catalog({ allTiers });
   const backup = !opts['no-backup'];
   const saved = () => console.log('  ' + savedLine(cfg) + '\n');
+  // Text question with a way back: an empty answer returns null.
+  const ask = async (message, def) => {
+    const a = (await input({ message: `${message} (empty = back)`, default: def })).trim();
+    return a === '' ? null : a;
+  };
 
   // Arrow-key list. Typing filters it; leaving it empty shows everything.
   const pickFrom = async (message, items, extra = []) =>
@@ -538,7 +543,7 @@ async function interactive(cfg, opts) {
     });
 
   console.log(`Transmog & Buff Tool ${VERSION}`);
-  console.log('Arrow keys to move, Enter to choose, Esc to go back or quit. Typing narrows a list.\n');
+  console.log('Arrow keys to move, Enter to choose, Ctrl+C to quit. Typing narrows a list; every screen has "- back".\n');
 
   for (;;) {
     const action = await select({
@@ -643,8 +648,8 @@ async function interactive(cfg, opts) {
       });
       if (pick === '__back__') return;
       if (pick === '__save__') {
-        const name = (await input({ message: 'Name for this look (empty = cancel):' })).trim();
-        if (!name) continue;
+        const name = await ask('Name for this look');
+        if (name === null) continue;
         if (!validOutfitName(name)) { console.log('  Names cannot contain "=", ";" or "#" and are at most 40 characters.\n'); continue; }
         const list = cfg.saved.filter((o) => o.name.toLowerCase() !== name.toLowerCase());
         list.push({ name, ids: [...cfg.outfits.staff] });
@@ -653,7 +658,8 @@ async function interactive(cfg, opts) {
         continue;
       }
       if (pick === '__key__') {
-        const answer = await input({ message: 'Key that puts on the next saved look in game (e.g. F7, Ctrl+F7; "none" = off):', default: cfg.hotkey });
+        const answer = await ask('Key that puts on the next saved look in game (e.g. F7, Ctrl+F7; "none" = off)', cfg.hotkey);
+        if (answer === null) continue;
         const key = normalizeHotkey(answer);
         if (!key) { console.log('  Not a key the game understands. Examples: F7, Ctrl+F7, Shift+O, NUMPAD1. Full list in TrueWukong-KeybindList.txt next to the config.\n'); continue; }
         writeConfig(cfg, {}, { backup, hotkey: key });
@@ -674,8 +680,9 @@ async function interactive(cfg, opts) {
       if (what === 'wear') { writeConfig(cfg, { staff: o.ids, spear: o.ids }, { backup }); saved(); }
       else if (what === 'overwrite') { o.ids = [...cfg.outfits.staff]; writeConfig(cfg, {}, { backup, saved: cfg.saved }); console.log('  Updated.\n'); }
       else if (what === 'rename') {
-        const name = (await input({ message: 'New name:', default: o.name })).trim();
-        if (!name || !validOutfitName(name)) { console.log('  Unchanged.\n'); continue; }
+        const name = await ask('New name', o.name);
+        if (name === null) continue;
+        if (!validOutfitName(name)) { console.log('  Names cannot contain "=", ";" or "#" and are at most 40 characters. Unchanged.\n'); continue; }
         o.name = name;
         writeConfig(cfg, {}, { backup, saved: cfg.saved });
       } else if (what === 'delete') {
@@ -754,7 +761,8 @@ async function interactive(cfg, opts) {
       });
       if (pick === '__back__') return;
       const v = valueByKey(pick);
-      const answer = await input({ message: `${v.label} - new value (${v.desc}):`, default: cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '' });
+      const answer = await ask(`${v.label} - new value (${v.desc})`, cfg.values[v.key] !== undefined ? showNumber(cfg.values[v.key]) : '');
+      if (answer === null) continue;
       if (!Number.isFinite(parseFloat(answer))) { console.log('  Not a number, unchanged.\n'); continue; }
       writeConfig(cfg, {}, { backup, values: { [v.key]: configNumber(answer) } });
       saved();
@@ -854,16 +862,17 @@ async function interactive(cfg, opts) {
           { name: '- back', value: '__back__' },
           ...ATTRS.map((a) => {
             const cur = cfg.attrs.find((x) => x.name === a.name);
-            return { name: `${a.label.padEnd(36)} ${cur ? 'locked at ' + cur.value : 'not locked'}, ${now(a.name)}`, value: a.name, description: `${a.name}: the game computes this from level, gear, talents and buffs. A lock re-applies your value whenever the game changes it. Empty input removes the lock.` };
+            return { name: `${a.label.padEnd(36)} ${cur ? 'locked at ' + cur.value : 'not locked'}, ${now(a.name)}`, value: a.name, description: `${a.name}: the game computes this from level, gear, talents and buffs. A lock re-applies your value whenever the game changes it. Type "none" to remove the lock.` };
           }),
         ],
       });
       if (pick === '__back__') return;
       const cur = cfg.attrs.find((x) => x.name === pick);
       const gameNow = snap && snap.values[pick] !== undefined ? fmtNum(snap.values[pick]) : '';
-      const answer = await input({ message: `Lock ${pick} at (${now(pick)}; empty = remove the lock):`, default: cur ? String(cur.value) : gameNow });
+      const answer = await ask(`Lock ${pick} at (${now(pick)}; "none" = remove the lock)`, cur ? String(cur.value) : gameNow);
+      if (answer === null) continue;
       let attrs = cfg.attrs.filter((x) => x.name !== pick);
-      if (answer.trim() !== '') {
+      if (!/^(none|off|-)$/i.test(answer)) {
         if (!Number.isFinite(parseFloat(answer))) { console.log('  Not a number, unchanged.\n'); continue; }
         attrs.push({ name: pick, value: parseFloat(answer) });
       }
