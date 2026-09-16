@@ -27,7 +27,7 @@ import {
   CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, validOutfitName,
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
-import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, validPresetName, coveredByActivePresets } from './presets.js';
+import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, presetText, cleanDesc, validPresetName, coveredByActivePresets } from './presets.js';
 import { readOwned, isOwned, isSetOwned } from './owned.js';
 import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
@@ -341,7 +341,7 @@ function describePresets(cfg) {
   if (!cfg.presets.length) return '  (no named buffs)';
   const cat = loadTalentCatalog(cfg.file);
   const nameOf = (id) => fullName(talentById(cat, id));
-  return cfg.presets.map((p) => `  [${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(26)} ${p.key !== 'None' ? ('key ' + p.key).padEnd(12) : ''.padEnd(12)} ${describePreset(p, cat, nameOf)}`).join('\n');
+  return cfg.presets.map((p) => `  [${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(26)} ${p.key !== 'None' ? ('key ' + p.key).padEnd(12) : ''.padEnd(12)} ${presetText(p, cat, nameOf)}`).join('\n');
 }
 
 function cmdPresets(cfg, opts) {
@@ -838,7 +838,7 @@ async function interactive(cfg, opts) {
           { name: '+ add a custom buff (change a value: regen, speed, attack...)', value: '__value__' },
           { name: '+ save the active buffs as a named buff', value: '__preset_save__' },
           ...(cfg.presets.length ? [new Separator('Named buffs (Enter: on/off, key, edit)')] : []),
-          ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: describePreset(p, cat, (id) => fullName(talentById(cat, id))) })),
+          ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: presetText(p, cat, (id) => fullName(talentById(cat, id))) })),
           ...(activeBuffIds(cfg).some((id) => !coveredByActivePresets(cfg).ids.has(id)) || changedValues().some((v) => !coveredByActivePresets(cfg).keys.has(v.key)) || cfg.attrs.length ? [new Separator('Active (on their own; parts of a named buff that is on are listed under it)')] : []),
           ...activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).map((id) => {
             const t = talentById(cat, id);
@@ -920,11 +920,12 @@ async function interactive(cfg, opts) {
       for (;;) {
         const on = presetActive(p, cfg);
         const what = await select({
-          message: `"${p.name}" (${on ? 'ON' : 'off'}): ${describePreset(p, cat, (id) => fullName(talentById(cat, id)))}`,
+          message: `"${p.name}" (${on ? 'ON' : 'off'}): ${presetText(p, cat, (id) => fullName(talentById(cat, id)))}`,
           choices: [
             { name: '- back', value: '__back__' },
             { name: on ? 'Turn it off' : 'Turn it on', value: 'toggle' },
             { name: `In-game key   ${p.key}`, value: 'key', description: 'Pressing it in game switches this named buff on or off. Examples: F8, Ctrl+F8, NUMPAD1; "none" removes it.' },
+            { name: `Description   ${p.desc ? p.desc.slice(0, 60) + (p.desc.length > 60 ? '...' : '') : '(none: the list of parts is shown)'}`, value: 'desc' },
             { name: 'Replace its contents with the active buffs', value: 'update' },
             { name: 'Rename', value: 'rename' },
             { name: 'Delete', value: 'delete' },
@@ -946,6 +947,13 @@ async function interactive(cfg, opts) {
           p.key = key;
           writeConfig(cfg, {}, { backup, presets: cfg.presets });
           console.log(key === 'None' ? '  In-game key removed.\n' : `  ${key} toggles "${p.name}" in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.\n`);
+          continue;
+        }
+        if (what === 'desc') {
+          const text = await ask('Description shown in the menu ("none" removes it)', p.desc ?? '');
+          if (text === null) continue;
+          p.desc = /^(none|-)$/i.test(text) ? undefined : cleanDesc(text);
+          writeConfig(cfg, {}, { backup, presets: cfg.presets });
           continue;
         }
         if (what === 'update') {

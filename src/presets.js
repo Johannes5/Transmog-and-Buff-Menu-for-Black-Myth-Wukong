@@ -19,11 +19,13 @@ export const DEFAULT_PRESETS = [
   { name: 'Defence +20%', talents: [], soaks: [], buffs: [], values: { defenseMultiplier: ['12E-1', '1'] }, key: 'None' },
   { name: 'Mana Regen', talents: [], soaks: [], buffs: [], values: { manaRegen: ['4', '0'] }, key: 'None' },
   // Spider Celestial Staff + Centipede 2-piece + venomous heavy attacks (a full-charge heavy poisons you too)
-  { name: 'Stinger', talents: [105013, 901411], soaks: [], buffs: [92313], values: {}, key: 'None' },
+  { name: 'Stinger', talents: [105013, 901411], soaks: [], buffs: [92313], values: {}, key: 'None', desc: "Custom Buff: similar to the Spider Celestial Staff effect. You inflict Poison Bane on the enemy with 3+ Focus heavy attacks, but also on yourself, while taking less damage from your own poison (via the Centipede 2-piece bonus)." },
 ];
 
 const ids = (s) => String(s ?? '').split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => Number.isInteger(n) && n > 0);
 const empty = (name) => ({ name, talents: [], soaks: [], buffs: [], values: {}, key: 'None' });
+/** Free text shown in the menu; the config line cannot hold { } ; so those are dropped. */
+export const cleanDesc = (s) => String(s ?? '').replace(/[{};]/g, ',').replace(/\s+/g, ' ').trim();
 
 export function parsePresets(text) {
   const out = [];
@@ -39,6 +41,7 @@ export function parsePresets(text) {
       else if (k === 'soaks') p.soaks = ids(v);
       else if (k === 'buffs') p.buffs = ids(v.replace(/@[a-z]+/gi, ''));
       else if (k === 'key') p.key = v || 'None';
+      else if (k === 'desc') { if (v) p.desc = v; }
       else if (k === 'values') {
         for (const triple of v.split(',')) {
           const [key, on, off] = triple.split(':').map((x) => x.trim());
@@ -62,6 +65,7 @@ export function formatPresets(list) {
     const vals = Object.entries(p.values).map(([k, [on, off]]) => `${k}:${on}:${off}`);
     if (vals.length) parts.push(`values=${vals.join(',')}`);
     if (p.key && p.key !== 'None') parts.push(`key=${p.key}`);
+    if (p.desc) parts.push(`desc=${cleanDesc(p.desc)}`);
     return `${p.name}{${parts.join(';')}}`;
   }).join(';');
 }
@@ -93,6 +97,12 @@ export function presetFromCurrent(name, cfg) {
   const values = {};
   for (const v of VALUES) if (!isDefault(v, cfg.values[v.key])) values[v.key] = [cfg.values[v.key], v.def];
   return { name, talents: [...cfg.talents], soaks: [...cfg.soaks], buffs: [...cfg.buffs], values, key: 'None' };
+}
+
+/** Menu text for a preset: its own description when it has one, else the list of parts. */
+export function presetText(p, cat, talentName) {
+  const parts = describePreset(p, cat, talentName);
+  return p.desc ? `${p.desc}  [${parts}]` : parts;
 }
 
 /** IDs and value keys that belong to some preset that is currently on (hidden from the "Active" list). */
