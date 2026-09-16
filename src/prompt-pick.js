@@ -84,7 +84,7 @@ export const pick = createPrompt((config, done) => {
   });
 
   if (status === 'done' && selected) return [prefix, message, theme.style.answer(selected.name)].filter(Boolean).join(' ').trimEnd();
-  const helpLine = theme.style.keysHelpTip(config.onApply ? [['↑↓', 'navigate'], ['⏎ or →', 'put it on, stay here'], ['Esc', 'back']] : [['↑↓', 'navigate'], ['⏎', 'choose'], ['Esc', 'back']]);
+  const helpLine = theme.style.keysHelpTip(config.onApply ? [['↑↓', 'navigate'], [`⏎ ${styleText('yellow', 'or')} →`, 'put it on, stay here'], ['Esc', 'back']] : [['↑↓', 'navigate'], ['⏎', 'choose'], ['Esc', 'back']]);
   const header = [prefix, message, theme.style.searchTerm(searchTerm)].filter(Boolean).join(' ').trimEnd();
   const noResults = results.length === 0 && searchTerm !== '' ? theme.style.error('No results found') : '';
   const body = [noResults || page, ' ', selected?.description ? theme.style.description(selected.description) : '', applied ? theme.style.applied(applied) : '', helpLine].filter(Boolean).join('\n').trimEnd();
