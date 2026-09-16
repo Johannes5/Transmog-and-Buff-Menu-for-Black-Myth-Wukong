@@ -595,6 +595,17 @@ async function showBuffImpact(cfg, before) {
 async function interactive(cfg, opts) {
   const raw = await import('@inquirer/prompts');
   const { Separator } = raw;
+  // Keep the console in raw mode for the whole session. Every prompt switches raw mode off when it
+  // closes and the next one switches it back on; on Windows that leaves a line-buffered console read
+  // pending, which swallows arrow keys until Enter is pressed. So the "off" is ignored while the menu
+  // runs and done once at exit.
+  if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+    const stdin = process.stdin;
+    const realSetRawMode = stdin.setRawMode.bind(stdin);
+    realSetRawMode(true);
+    stdin.setRawMode = (on) => { if (on) realSetRawMode(true); return stdin; };
+    process.on('exit', () => { try { realSetRawMode(false); } catch { /* console gone */ } });
+  }
   // Esc goes back: the prompt library ignores Esc, but every prompt accepts an AbortSignal.
   // A lone Esc keypress aborts the current prompt and the wrapper returns the "back" answer.
   const escapable = (prompt, onEsc) => async (config, opts = {}) => {
