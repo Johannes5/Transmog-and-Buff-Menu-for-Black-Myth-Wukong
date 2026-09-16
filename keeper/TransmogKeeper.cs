@@ -387,15 +387,15 @@ namespace TransmogKeeper
         {
             try
             {
-                object events = BUS_EventCollectionCS.Get(pawn);
-                if (events == null) return;
-                var field = events.GetType().GetField("Evt_PoleDrinkStateEnd");
-                if (field == null) { LogOnce("Evt_PoleDrinkStateEnd not found; soaks from the tool are unavailable in this game build"); _drinkPawn = name; return; }
-                if (_drinkHandler == null || _drinkHandler.GetType() != field.FieldType)
-                    _drinkHandler = Delegate.CreateDelegate(field.FieldType, this, "OnDrinkEnd");
-                var current = field.GetValue(events) as Delegate;
-                if (current == null || Array.IndexOf(current.GetInvocationList(), _drinkHandler) < 0)
-                    field.SetValue(events, Delegate.Combine(current, _drinkHandler));
+                // BUS_EventCollectionCS.Get returns the game-side BUS_GSEventCollection; its events are GSDel_*
+                // wrappers with a `+` operator that adds a C# delegate to their multicast list.
+                var coll = BUS_EventCollectionCS.Get(pawn);
+                if (coll == null) return;
+                var gs = coll.Evt_PoleDrinkStateEnd;
+                if (gs == null) { LogOnce("Evt_PoleDrinkStateEnd is null on the event collection; soaks from the tool are unavailable in this game build"); _drinkPawn = name; return; }
+                var handler = new b1.EventDelDefine.Del_Void(OnDrinkEnd);
+                _drinkHandler = handler;
+                coll.Evt_PoleDrinkStateEnd = gs + handler;
                 _drinkPawn = name;
                 Log($"Listening for gourd drinks on {name} ({_soaks.Count} soak(s) from the tool)");
             }
