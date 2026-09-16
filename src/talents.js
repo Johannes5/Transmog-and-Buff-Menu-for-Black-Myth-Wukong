@@ -109,7 +109,7 @@ function soakEntries() {
 /** Buffs the keeper keeps on the player directly (line 'buff' -> keeperBuffs). */
 function keptBuffEntries() {
   return [
-    { id: 92313, slot: 'talent', line: 'buff', category: 'Soaks', group: null, tier: null, name: 'Deathstinger venom (poisons you on your next hit, no gourd needed)', kind: 'kept buff: Deathstinger\'s poison build-up is topped up every few seconds, so the next hit you take or deal makes you Poisoned; no drink needed', description: 'Keeps Deathstinger\'s poison build-up on you: the next hit you take or deal puts you in the Poisoned State (for set bonuses and staffs that want you poisoned).', aliases: '倒马毒钩 Deathstinger venom poison self kept buff', note: 'kept buff' },
+    { id: 92313, slot: 'talent', line: 'buff', category: 'Soaks', group: null, tier: null, name: 'Deathstinger venom (your hits poison you too, no gourd needed)', kind: 'kept buff: Deathstinger\'s poison build-up is kept topped up, so the next hit you land or take puts you in the Poisoned State; no drink needed', description: 'Keeps Deathstinger\'s poison build-up on you without drinking: the next hit you land or take puts you in the Poisoned State. With the Spider Celestial Staff your heavy attacks then poison the enemy and you.', aliases: '倒马毒钩 Deathstinger venom poison self kept buff', note: 'kept buff' },
   ];
 }
 

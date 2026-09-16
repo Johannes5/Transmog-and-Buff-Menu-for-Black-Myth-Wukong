@@ -124,7 +124,7 @@ export const LIVE_BARS = [
   ['Qi (spirit skills)', 'VigorEnergy', 'VigorEnergyMax'],
   ['Might (transformation)', 'CurEnergy', 'TransEnergyMax'],
   ['Vessel', 'FabaoEnergy', 'FabaoEnergyMax'],
-  ['Focus', 'Pevalue', 'PelevelMax'],
+  ['Focus', 'Pevalue', 'PevalueMax'],
 ];
 
 /** @returns {{ time: Date, stale: boolean, values: Record<string, number> } | null} */

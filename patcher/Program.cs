@@ -259,17 +259,35 @@ int applied = 0;
     applied++;
 }
 
-// ---- 10. no extra Focus while charging --------------------------------------
-// The mod's ChargeFocus loop adds 3 Focus per tick while a heavy attack is charged; with a full
-// 4-point gauge that re-hits the cap every tick (the bar flickers and the "point gained" sound stutters).
+// ---- 10. Focus while charging stops at the gauge's maximum -------------------
+// The mod's ChargeFocus loop adds 3 Focus per tick while a heavy attack is charged (this is how the
+// 4th point fills up). It keeps adding at a full gauge, so the bar flickers and the "point gained"
+// sound stutters. Each tick lambda gets a guard: if (Pevalue + 3 > PevalueMax) return;
 {
-    var cf = main.Methods.First(m => m.Name == "ChargeFocus");
-    var il = cf.Body.GetILProcessor();
-    cf.Body.Instructions.Clear();
-    cf.Body.ExceptionHandlers.Clear();
-    cf.Body.Variables.Clear();
-    il.Emit(OpCodes.Ret);
-    Console.WriteLine("[10] Extra Focus while charging disabled (ChargeFocus is a no-op)");
+    const int Pevalue = 191, PevalueMax = 39;
+    MethodDefinition getVal = main.Methods.First(m => m.Name == "GetVal" && m.Parameters.Count == 1);
+    int patched = 0;
+    foreach (var t in main.NestedTypes)
+        foreach (var m in t.Methods.Where(x => x.Name.StartsWith("<ChargeFocus>") && x.HasBody))
+        {
+            var ins = m.Body.Instructions;
+            bool adds = ins.Any(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference mr && mr.Name == "SetVal") && ins.Any(i => i.OpCode == OpCodes.Ldc_R4 && i.Operand is float f && f == 3f);
+            if (!adds) continue;
+            var il = m.Body.GetILProcessor();
+            var first = ins[0];
+            var ret = il.Create(OpCodes.Ret);
+            il.InsertBefore(first, il.Create(OpCodes.Ldc_I4, Pevalue));
+            il.InsertBefore(first, il.Create(OpCodes.Call, getVal));
+            il.InsertBefore(first, il.Create(OpCodes.Ldc_R4, 3f));
+            il.InsertBefore(first, il.Create(OpCodes.Add));
+            il.InsertBefore(first, il.Create(OpCodes.Ldc_I4, PevalueMax));
+            il.InsertBefore(first, il.Create(OpCodes.Call, getVal));
+            il.InsertBefore(first, il.Create(OpCodes.Ble, first));
+            il.InsertBefore(first, ret);
+            patched++;
+        }
+    if (patched == 0) throw new Exception("ChargeFocus tick lambdas not found");
+    Console.WriteLine($"[10] Charging Focus stops at the gauge maximum ({patched} tick lambdas guarded)");
     applied++;
 }
 
