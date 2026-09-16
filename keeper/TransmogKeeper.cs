@@ -292,20 +292,20 @@ namespace TransmogKeeper
                 if (_soakNext.TryGetValue(soak, out next) && now < next) continue;
                 var desc = GameDBRuntime.GetConsumeDesc(soak);
                 if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); _soakNext[soak] = now.AddSeconds(60); continue; }
-                bool missing = false;
+                // Evt_TriggerWinePartner takes a trigger *type* and only fires for soaks slotted in the gourd,
+                // so add the soak's buffs directly, exactly as BUS_UnitItemComp.OnTriggrWinePartnerEffect does
+                // (source type 40, default duration).
+                var added = new List<int>();
                 foreach (var fx in desc.ConsumeEffect)
                 {
                     if (fx.EffectType != ResB1.ConsumeEffectType.Buff) continue;
-                    if (!BGUFunctionLibraryCS.BGUHasBuffByID(pawn, fx.EffectId)) { missing = true; break; }
+                    if (BGUFunctionLibraryCS.BGUHasBuffByID(pawn, fx.EffectId)) continue;
+                    BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, fx.EffectId, (EBuffSourceType)40, 0f);
+                    added.Add(fx.EffectId);
                 }
-                if (!missing) { _soakNext[soak] = now.AddSeconds(1); continue; }
-                if (!InvokeEvent(events, "Evt_TriggerWinePartner", soak))
-                {
-                    LogOnce("Evt_TriggerWinePartner not found on the event collection; soaks are unavailable in this game build");
-                    return;
-                }
+                if (added.Count == 0) { _soakNext[soak] = now.AddSeconds(1); continue; }
                 _soakNext[soak] = now.AddSeconds(SoakRetrySeconds);
-                if (!_soakLogged.Contains(soak)) { _soakLogged.Add(soak); Log($"Soak {soak} triggered on {name}"); }
+                if (!_soakLogged.Contains(soak)) { _soakLogged.Add(soak); Log($"Soak {soak}: buff {string.Join(",", added)} added on {name}"); }
             }
         }
         private readonly HashSet<int> _soakLogged = new HashSet<int>();
