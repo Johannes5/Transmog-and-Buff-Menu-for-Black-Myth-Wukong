@@ -305,6 +305,47 @@ namespace TransmogKeeper
                 applied.Add(id);
             }
             if (applied.Count > 0) Log($"Activated talents {string.Join(",", applied)} on {name}");
+
+            // A talent can stay registered while its buffs are gone (seen after transformations and some
+            // blackouts: HasTalent true, none of AddBuffIDs on the player). True Wukong's menu hook refreshes
+            // by deactivating and re-activating; do the same, at most every TalentRefreshSeconds per talent.
+            if ((now - _lastTalentRefresh).TotalSeconds < 5) return;
+            _lastTalentRefresh = now;
+            foreach (int id in _talents)
+            {
+                if (!talentData.HasTalent(id)) continue;
+                DateTime next;
+                if (_talentRefresh.TryGetValue(id, out next) && now < next) continue;
+                var buffs = TalentBuffs(id);
+                if (buffs.Count == 0) continue;
+                bool any = false;
+                foreach (int b in buffs) if (BGUFunctionLibraryCS.BGUHasBuffByID(pawn, b)) { any = true; break; }
+                if (any) continue;
+                _talentRefresh[id] = now.AddSeconds(TalentRefreshSeconds);
+                if (InvokeEvent(events, "Evt_DeactivateTalent", id) && InvokeEvent(events, "Evt_ActivateTalent", id, 1))
+                    Log($"Talent {id}: its buffs were gone; re-applied on {name}");
+            }
+        }
+
+        private const double TalentRefreshSeconds = 20;
+        private DateTime _lastTalentRefresh = DateTime.MinValue;
+        private readonly Dictionary<int, DateTime> _talentRefresh = new Dictionary<int, DateTime>();
+        private readonly Dictionary<int, List<int>> _talentBuffCache = new Dictionary<int, List<int>>();
+
+        /** Buff IDs a talent adds (TalentSDesc.AddBuffIDs), cached; empty for passive-skill-only talents. */
+        private List<int> TalentBuffs(int id)
+        {
+            List<int> list;
+            if (_talentBuffCache.TryGetValue(id, out list)) return list;
+            list = new List<int>();
+            try
+            {
+                var desc = GameDBRuntime.GetTalentSDesc(id);
+                foreach (var s in (desc?.AddBuffIDs ?? "").Split(',', ';', '|')) { int b; if (int.TryParse(s.Trim(), out b)) list.Add(b); }
+            }
+            catch { }
+            _talentBuffCache[id] = list;
+            return list;
         }
 
         // ---------- soaks (gourd additives) ----------

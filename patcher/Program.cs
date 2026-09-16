@@ -229,6 +229,20 @@ int applied = 0;
     applied++;
 }
 
+// ---- 8. no "control actor" clone skills --------------------------------------
+// ScanDamage/ScanInputBind spawn a controllable Great Sage/Erlang actor that performs a skill (after
+// perfect dodges, see-throughs and chords). All of it goes through DoControlSkill; make it a no-op.
+{
+    var dcs = main.Methods.First(m => m.Name == "DoControlSkill");
+    var il = dcs.Body.GetILProcessor();
+    dcs.Body.Instructions.Clear();
+    dcs.Body.ExceptionHandlers.Clear();
+    dcs.Body.Variables.Clear();
+    il.Emit(OpCodes.Ret);
+    Console.WriteLine("[8] Control-actor clone skills disabled (DoControlSkill is a no-op)");
+    applied++;
+}
+
 // ---- 6. marker so the tool can tell a patched DLL without the .orig --------
 {
     const string marker = "TransmogTool-patched";
