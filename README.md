@@ -7,7 +7,7 @@ Wear any look, use any effect. A menu-driven tool for Black Myth: Wukong that le
 - **Buffs**: activate any set bonus, armor piece effect, staff effect, curio or gourd soak without owning it, on any outfit. Every buff shows its in-game description.
 - **Custom buffs**: regeneration, move speed, attack and defense multipliers and more. Every value shows its default and can be reset with one keystroke; reset values stay under "recently active" so you can put them back.
 
-Pick everything by name with the arrow keys. In a look list, the right arrow (or Shift+Enter) puts the highlighted look on and keeps the list open, so you can try several in a row with the game running; Enter chooses and goes back. Every change is backed up and can be undone from the menu.
+Pick everything by name with the arrow keys. In a look list, Enter (or the right arrow) puts the highlighted look on and keeps the list open, so you can try several in a row with the game running; Esc goes back. Every change is backed up and can be undone from the menu.
 
 Built on a fork of True Wukong, bundled with its author's permission; the in-game part of this tool is that mod. Credits at the bottom.
 

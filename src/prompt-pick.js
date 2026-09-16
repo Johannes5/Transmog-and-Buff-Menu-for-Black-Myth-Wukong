@@ -41,9 +41,12 @@ export const pick = createPrompt((config, done) => {
   const selected = results[active];
 
   useKeypress(async (key, rl) => {
-    if (isEnterKey(key) && !key.shift) {
+    if (isEnterKey(key) && !key.shift && !(config.onApply && selected && selected.value !== '__back__')) {
+      // plain Enter: choose and close (in a try-on list only the "- back" entry closes this way)
       if (selected) { setStatus('done'); done(selected.value); } else rl.write(searchTerm);
-    } else if (isApplyKey(key) && selected && config.onApply) {
+    } else if ((isApplyKey(key) || isEnterKey(key)) && selected && config.onApply) {
+      // Enter, right arrow or Shift+Enter in a try-on list: apply and stay (Windows consoles send
+      // Shift+Enter as a plain Enter, so Enter itself has to apply here; Esc or "- back" leaves)
       rl.clearLine(0);
       rl.write(searchTerm);
       const note = await config.onApply(selected.value);
@@ -81,7 +84,7 @@ export const pick = createPrompt((config, done) => {
   });
 
   if (status === 'done' && selected) return [prefix, message, theme.style.answer(selected.name)].filter(Boolean).join(' ').trimEnd();
-  const helpLine = theme.style.keysHelpTip(config.onApply ? [['↑↓', 'navigate'], ['→ or Shift+⏎', 'try it, stay here'], ['⏎', 'choose'], ['Esc', 'back']] : [['↑↓', 'navigate'], ['⏎', 'choose'], ['Esc', 'back']]);
+  const helpLine = theme.style.keysHelpTip(config.onApply ? [['↑↓', 'navigate'], ['⏎ or →', 'put it on, stay here'], ['Esc', 'back']] : [['↑↓', 'navigate'], ['⏎', 'choose'], ['Esc', 'back']]);
   const header = [prefix, message, theme.style.searchTerm(searchTerm)].filter(Boolean).join(' ').trimEnd();
   const noResults = results.length === 0 && searchTerm !== '' ? theme.style.error('No results found') : '';
   const body = [noResults || page, ' ', selected?.description ? theme.style.description(selected.description) : '', applied ? theme.style.applied(applied) : '', helpLine].filter(Boolean).join('\n').trimEnd();
