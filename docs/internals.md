@@ -183,7 +183,10 @@ matching pieces; the game only checks the talent itself.
 3. The mod's "stride jump always allowed" override is disabled.
 4. The mod's hard-coded debug hotkeys (F4-F9, F12) are unbound, so they cannot collide with trainer hotkeys.
 5. The mod no longer aborts when Harmony hooks cannot be installed, which makes "lite" mode possible.
-6. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
+6. The "special transform" on Dodge+SwitchStance (Great Sage/Erlang with enough Might) is disabled: the
+   guard in `ScanInputBind` becomes an unconditional skip, so neither the transform nor the "Not enough
+   Might" tip can fire.
+7. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
    looks for it (UTF-16 in the DLL) to know the DLL is patched; the release ships no `.orig`.
 
 Run it with `npm run patch-mod` (needs the .NET 8 SDK). If the game is running the DLL is

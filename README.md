@@ -52,6 +52,8 @@ Under Transmog > Saved looks you can save the current look under a name, put a s
 
 **What is written where.** One file: `CSharpLoader\Mods\TrueWukong\TrueWukongConfig.txt`, with a dated backup before every save (the last 30 are kept); Undo restores any of them. Save games, Steam files and your real gear and stats are never touched. Buffs are activated on the character while the mod runs and are gone once it is removed.
 
+**No surprise transformations.** The bundled mod has its own gameplay features (turning into the Great Sage or Erlang, parries, spell shortcuts). The ones that fire by accident are switched off in the bundled build; the rest only trigger on key chords the tool's config leaves unbound.
+
 **Antivirus.** `version.dll` in the game folder is the open-source CSharpLoader mod loader. If your antivirus quarantines it, restore it and add an exception.
 
 **Uninstall.** Options > Uninstall (with the game closed) removes the mod loader, the mod and the keeper and puts back any file the installer replaced. Then delete the tool folder. Buffs disappear at the next start. By hand: delete `b1\Binaries\Win64\version.dll` and the `CSharpLoader` folder (or only `CSharpLoader\Mods\TrueWukong` and `CSharpLoader\Mods\TransmogKeeper` if you use other loader mods).

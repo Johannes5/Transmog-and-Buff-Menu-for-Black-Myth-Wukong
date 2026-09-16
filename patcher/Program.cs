@@ -20,11 +20,16 @@ if (args.Length < 1)
 if (args[0] == "--api")
 {
     var apiRx = new System.Text.RegularExpressions.Regex(args.Length > 2 ? args[2] : ".", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-    var apiAsm = AssemblyDefinition.ReadAssembly(Path.GetFullPath(args[1]), new ReaderParameters { InMemory = true });
+    var apiResolver = new DefaultAssemblyResolver();
+    var apiDir = Path.GetDirectoryName(Path.GetFullPath(args[1]))!;
+    foreach (var d in new[] { apiDir, Path.GetFullPath(Path.Combine(apiDir, "..", "..")), Path.GetFullPath(Path.Combine(apiDir, "..", "..", "..")) }) if (Directory.Exists(d)) apiResolver.AddSearchDirectory(d);
+    var apiAsm = AssemblyDefinition.ReadAssembly(Path.GetFullPath(args[1]), new ReaderParameters { InMemory = true, AssemblyResolver = apiResolver });
     foreach (var t in apiAsm.MainModule.GetTypes())
     {
         if (!apiRx.IsMatch(t.FullName)) continue;
         Console.WriteLine($"{(t.IsEnum ? "enum " : t.IsInterface ? "interface " : "class ")}{t.FullName}");
+        foreach (var ca in t.CustomAttributes) Console.WriteLine($"  [{ca.AttributeType.Name}({string.Join(", ", ca.ConstructorArguments.Select(a => a.Value is TypeReference tr ? tr.Name : a.Value?.ToString()))})]");
+        foreach (var m in t.Methods) foreach (var ca in m.CustomAttributes) if (ca.AttributeType.Name.StartsWith("Harmony")) Console.WriteLine($"  method {m.Name} [{ca.AttributeType.Name}({string.Join(", ", ca.ConstructorArguments.Select(a => a.Value is TypeReference tr ? tr.Name : a.Value?.ToString()))})]");
         foreach (var f in t.Fields) if (f.IsPublic || t.IsEnum) Console.WriteLine($"  field  {f.FieldType.Name} {f.Name}{(f.HasConstant ? " = " + f.Constant : "")}");
         foreach (var p in t.Properties) Console.WriteLine($"  prop   {p.PropertyType.Name} {p.Name}");
         foreach (var m in t.Methods) if (m.IsPublic && !m.IsGetter && !m.IsSetter) Console.WriteLine($"  method {(m.IsStatic ? "static " : "")}{m.ReturnType.Name} {m.Name}({string.Join(", ", m.Parameters.Select(p => p.ParameterType.Name + " " + p.Name))})");
@@ -34,10 +39,21 @@ if (args[0] == "--api")
 
 // Developer helper: `--find <dll> <regex>` lists members (methods, fields, properties) whose name matches;
 // `--il <dll> <Type::Method>` prints a method's IL (calls, constants, strings).
-if (args[0] == "--find" || args[0] == "--il")
+if (args[0] == "--find" || args[0] == "--il" || args[0] == "--grep")
 {
     var asm2 = AssemblyDefinition.ReadAssembly(Path.GetFullPath(args[1]), new ReaderParameters { InMemory = true });
-    if (args[0] == "--find")
+    if (args[0] == "--grep")
+    {
+        // methods whose IL mentions a string, field or callee matching the regex
+        var rx = new System.Text.RegularExpressions.Regex(args[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (var t in asm2.MainModule.GetTypes())
+            foreach (var m in t.Methods.Where(x => x.HasBody))
+            {
+                var hits = m.Body.Instructions.Select(i => i.Operand switch { string s => "\"" + s + "\"", MemberReference r => r.Name, _ => null }).Where(s => s != null && rx.IsMatch(s)).Distinct().ToList();
+                if (hits.Count > 0) Console.WriteLine($"{t.FullName}::{m.Name}  <- {string.Join(", ", hits.Take(6))}");
+            }
+    }
+    else if (args[0] == "--find")
     {
         var rx = new System.Text.RegularExpressions.Regex(args[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         foreach (var t in asm2.MainModule.GetTypes())
@@ -190,6 +206,26 @@ int applied = 0;
     rethrow.OpCode = OpCodes.Leave;
     rethrow.Operand = afterTry;
     Console.WriteLine("[5] Init no longer aborts when Harmony hooks cannot be installed (EnableJit=0 lite mode)");
+    applied++;
+}
+
+// ---- 7. no "special transform" on Dodge+SwitchStance --------------------------
+// In ScanInputBind the stance-switch handler checks (rolling && !sacred) and then either transforms the
+// player into the Great Sage/Erlang (enough Might) or shows "Not enough Might to transform!". Users of
+// the transmog tool trigger this by accident (Tab right after a dodge). Turn the guard into an
+// unconditional skip of the whole block.
+{
+    var sib = main.Methods.First(m => m.Name == "ScanInputBind");
+    var ins = sib.Body.Instructions;
+    int idx = -1;
+    for (int i = 0; i < ins.Count; i++) if (ins[i].OpCode == OpCodes.Ldstr && ins[i].Operand is string s && s == "specialMightCost") { idx = i; break; }
+    if (idx < 0) throw new Exception("specialMightCost check not found in ScanInputBind");
+    Instruction? guard = null;
+    for (int i = idx; i > idx - 40 && i >= 0; i--)
+        if (ins[i].OpCode == OpCodes.Brfalse || ins[i].OpCode == OpCodes.Brfalse_S) { guard = ins[i]; break; }
+    if (guard == null || guard.Operand is not Instruction target || target.Offset <= ins[idx].Offset) throw new Exception("special transform guard not found");
+    guard.OpCode = OpCodes.Br;
+    Console.WriteLine("[7] Special transform on Dodge+SwitchStance disabled (no transform, no \"Not enough Might\" tip)");
     applied++;
 }
 
