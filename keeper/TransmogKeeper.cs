@@ -596,18 +596,23 @@ namespace TransmogKeeper
                 {
                     object v;
                     try { v = BGW_GameDB.GetPassiveSkillDescDic(id); } catch (Exception ex) { sb.AppendLine($"P\t{id}\terror {ex.Message}"); continue; }
-                    if (v == null) { sb.AppendLine($"P\t{id}\t(null)"); continue; }
-                    var e = new System.Collections.DictionaryEntry(id, v);
-                    var parts = new List<string>();
-                    foreach (var p in v.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (p.GetIndexParameters().Length > 0 || p.Name == "Parser" || p.Name == "Descriptor") continue;
-                        object val;
-                        try { val = p.GetValue(v); } catch { continue; }
-                        string s = val is System.Collections.IEnumerable en && !(val is string) ? string.Join("|", en.Cast<object>().Select(x => x?.ToString())) : val?.ToString();
-                        if (!string.IsNullOrEmpty(s) && s != "0" && s != "False") parts.Add($"{p.Name}={s.Replace("\n", " ").Replace("\t", " ")}");
-                    }
-                    sb.AppendLine($"P\t{e.Key}\t{string.Join(" ", parts)}");
+                    var dic = v as System.Collections.IDictionary;
+                    if (dic == null) { sb.AppendLine($"P\t{id}\t(null)"); continue; }
+                    foreach (System.Collections.DictionaryEntry e in dic) sb.AppendLine($"P\t{id}\tlevel={e.Key}\t{Describe(e.Value, 1)}");
+                }
+            });
+            section("BUFFS\tid\tfields (buffs referenced by talents and consumables)", () =>
+            {
+                var ids = new SortedSet<int>();
+                foreach (var t in GameDBRuntime.GetTBTalentSDesc().List)
+                    foreach (var s in (t.AddBuffIDs ?? "").Split(',', ';', '|')) { int id; if (int.TryParse(s.Trim(), out id)) ids.Add(id); }
+                foreach (var c in GameDBRuntime.GetTBConsumeDesc().List)
+                    foreach (var fx in c.ConsumeEffect) if (fx.EffectType == ResB1.ConsumeEffectType.Buff) ids.Add(fx.EffectId);
+                foreach (int id in ids)
+                {
+                    object b;
+                    try { b = GameDBRuntime.GetFUStBuffDesc(id); } catch (Exception ex) { sb.AppendLine($"B\t{id}\terror {ex.Message}"); continue; }
+                    sb.AppendLine($"B\t{id}\t{(b == null ? "(null)" : Describe(b, 2))}");
                 }
             });
             section("ITEMS\tid\tname\ttypeName\titemType\tpackage\tparam1\tparam2\tbrief\tdesc\teffectDesc\thudEffectDesc", () =>
@@ -628,6 +633,28 @@ namespace TransmogKeeper
             });
             File.WriteAllText(DumpPath, sb.ToString());
             Log("Tables dumped to " + DumpPath);
+        }
+
+        /** "Name=value Name=value" for an object's public properties; lists and nested messages expanded to `depth`. */
+        private static string Describe(object v, int depth)
+        {
+            if (v == null) return "null";
+            var type = v.GetType();
+            if (type.IsPrimitive || type.IsEnum || v is string || v is decimal) return v.ToString();
+            if (depth <= 0) return type.Name;
+            if (v is System.Collections.IEnumerable en && !(v is string))
+                return "[" + string.Join(" | ", en.Cast<object>().Select(x => Describe(x, depth - 1))) + "]";
+            var parts = new List<string>();
+            foreach (var p in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (p.GetIndexParameters().Length > 0 || p.Name == "Parser" || p.Name == "Descriptor") continue;
+                object val;
+                try { val = p.GetValue(v); } catch { continue; }
+                string s = Describe(val, depth - 1);
+                if (string.IsNullOrEmpty(s) || s == "0" || s == "False" || s == "null" || s == "[]") continue;
+                parts.Add($"{p.Name}={s.Replace("\n", " ").Replace("\t", " ")}");
+            }
+            return "{" + string.Join(" ", parts) + "}";
         }
 
         private void LogEquipState(string pawnName, IBUC_EquipData data)
