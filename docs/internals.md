@@ -191,7 +191,11 @@ matching pieces; the game only checks the talent itself.
 6. The "special transform" on Dodge+SwitchStance (Great Sage/Erlang with enough Might) is disabled: the
    guard in `ScanInputBind` becomes an unconditional skip, so neither the transform nor the "Not enough
    Might" tip can fire.
-7. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
+7. `DoControlSkill` is a no-op: the mod no longer spawns a controllable Great Sage/Erlang actor to
+   perform a skill after perfect dodges, see-throughs or chords.
+8. The `ScanBuffWhenCast` prefix (reactions to player buffs: extra buffs, projectiles, Sage helpers)
+   always runs the original and does nothing else.
+9. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
    looks for it (UTF-16 in the DLL) to know the DLL is patched; the release ships no `.orig`.
 
 Run it with `npm run patch-mod` (needs the .NET 8 SDK). If the game is running the DLL is
