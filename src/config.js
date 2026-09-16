@@ -7,6 +7,7 @@ import { parseAttrLine, formatAttrLine } from './values.js';
 export const CONFIG_REL = path.join('b1', 'Binaries', 'Win64', 'CSharpLoader', 'Mods', 'TrueWukong', 'TrueWukongConfig.txt');
 export const KEYS = { staff: 'staffTransmog', spear: 'spearTransmog' };
 export const TALENT_KEY = 'addTalents';
+export const SOAKS_KEY = 'keeperSoaks';      // TransmogKeeper v1.6+: soak item IDs whose gourd effect is kept active
 export const RECENT_KEY = 'recentBuffs';     // tool only: buffs removed lately, newest first (the menu offers to reactivate them)
 export const RECENT_KEPT = 12;
 export const ATTR_KEY = 'keeperAttr';
@@ -103,6 +104,7 @@ export function readConfig(file) {
     file, raw, eol, lines, outfits, values,
     talents: parseIds(values[TALENT_KEY]),
     recent: parseIds(values[RECENT_KEY]),
+    soaks: parseIds(values[SOAKS_KEY]),
     attrs: parseAttrLine(values[ATTR_KEY]),
     saved: parseOutfits(values[OUTFITS_KEY]),
     hotkey: values[HOTKEY_KEY] === undefined || values[HOTKEY_KEY] === '' ? DEFAULT_HOTKEY : values[HOTKEY_KEY] === '0' ? 'None' : values[HOTKEY_KEY],
@@ -113,13 +115,14 @@ export function readConfig(file) {
  * Write the tool's lines. `outfits` = { staff?: ids, spear?: ids }; the options replace the other
  * lines when given. A dated backup is written first (unless backup = false) and old backups pruned.
  */
-export function writeConfig(cfg, outfits, { backup = true, talents, values, attrs, saved, hotkey } = {}) {
+export function writeConfig(cfg, outfits, { backup = true, talents, soaks, values, attrs, saved, hotkey } = {}) {
   // Buffs that leave the active list are remembered as "recently active" (newest first, capped).
   let recent;
-  if (talents) {
+  if (talents || soaks) {
     const fresh0 = readConfig(cfg.file);
-    const gone = fresh0.talents.filter((id) => !talents.includes(id));
-    recent = [...gone, ...fresh0.recent.filter((id) => !gone.includes(id) && !talents.includes(id))].slice(0, RECENT_KEPT);
+    const nextT = talents ?? fresh0.talents, nextS = soaks ?? fresh0.soaks;
+    const gone = [...fresh0.talents.filter((id) => !nextT.includes(id)), ...fresh0.soaks.filter((id) => !nextS.includes(id))];
+    recent = [...gone, ...fresh0.recent.filter((id) => !gone.includes(id) && !nextT.includes(id) && !nextS.includes(id))].slice(0, RECENT_KEPT);
   }
   // Always start from what is on disk right now: another CLI window, the game or a text editor may
   // have changed other lines since this session read the file (an older version re-used the lines
@@ -141,6 +144,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, values, attr
     if (grip in outfits) setIds(KEYS[grip], outfits[grip], 'transmog IDs');
   }
   if (talents) setIds(TALENT_KEY, talents, 'talents activated on the player');
+  if (soaks) setIds(SOAKS_KEY, soaks, 'TransmogKeeper only: soaks (gourd additives) whose effect is kept active as if just drunk');
   if (recent) setIds(RECENT_KEY, recent, 'Transmog & Buff Tool only: buffs removed lately (the menu offers to reactivate them)');
   if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);
   if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from '../src/resolve.js';
 import { catalog, itemById, slotOf, setPieces, sets } from '../src/data.js';
 import { CURIO_EFFECTS, UNIQUE_PIECES, WEAPON_EFFECTS } from '../src/effects.js';
+import { SOAKS } from '../src/soaks.js';
+import { loadTalentCatalog, CATEGORIES } from '../src/talents.js';
 
 test('catalog IDs are unique and decode to their slot', () => {
   const all = catalog({ allTiers: true });
@@ -45,6 +47,15 @@ test('resolveTalent and resolveOutfit', () => {
   assert.equal(resolveOutfit(saved, 'boss fits').ids[0], 1);
   assert.equal(resolveOutfit(saved, 'cas').name, 'Casual');
   assert.throws(() => resolveOutfit(saved, 'nope'), /No saved look/);
+});
+
+test('soaks are a buff category even without the mod list file', () => {
+  const cat = loadTalentCatalog('C:/nowhere/TrueWukongConfig.txt');
+  assert.equal(cat.length, SOAKS.length);
+  assert.ok(cat.every((t) => t.line === 'soak' && t.category === 'Soaks' && t.description));
+  assert.ok(CATEGORIES.includes('Soaks'));
+  assert.equal(new Set(SOAKS.map((s) => s.id)).size, 29);
+  assert.ok(SOAKS.every((s) => s.id >= 2301 && s.id <= 2329));
 });
 
 test('effect tables have the shape the catalog expects', () => {

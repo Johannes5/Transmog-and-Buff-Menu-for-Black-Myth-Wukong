@@ -4,7 +4,7 @@ Wear any look, use any effect. A menu-driven tool for Black Myth: Wukong that le
 
 - **Transmog**: put any armor set, staff or gourd look on top of your real gear. Stats stay as they are.
 - **Saved looks**: keep several looks by name and cycle through them in game with one key (F7 by default).
-- **Buffs**: activate any set bonus, armor piece effect, staff effect or curio without owning the gear, on any outfit. Every buff shows its in-game description.
+- **Buffs**: activate any set bonus, armor piece effect, staff effect, curio or gourd soak without owning it, on any outfit. Every buff shows its in-game description.
 - **Values**: regeneration, move speed, attack and defense multipliers.
 
 Pick everything by name with the arrow keys. Every change is backed up and can be undone from the menu.
@@ -45,6 +45,8 @@ Under Transmog > Saved looks you can save the current look under a name, put a s
 ## Notes
 
 **Changing values.** Transmog and buffs apply within a second while the keeper is installed (it is, by default), otherwise with Ctrl+Enter. Attack and defense multipliers take effect at the next respawn (shrine rest, transformation or reload). When you add or remove a buff while a save is loaded, the tool watches the game for a few seconds and shows which attributes moved.
+
+**Soaks.** The Soaks category keeps a soak's effect on as if you had just drunk from the gourd: the keeper re-triggers it whenever it runs out. Effects that only matter during the sip itself (extra healing, uninterruptible drinking) are listed but do little outside drinking; effects that happen once per sip (Focus, Mana) repeat every few seconds. Soaks need the keeper.
 
 **Using a trainer?** If WeMod, FLiNG or Cheat Engine stop attaching after installing the mod loader, close the game, open Options and turn on Trainer compatibility. Looks and buffs then apply within a second on their own. Attack and defense multipliers and the two cooldown timers are unavailable in this mode; the tool marks them.
 

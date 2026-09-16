@@ -32,6 +32,47 @@ if (args[0] == "--api")
     return 0;
 }
 
+// Developer helper: `--find <dll> <regex>` lists members (methods, fields, properties) whose name matches;
+// `--il <dll> <Type::Method>` prints a method's IL (calls, constants, strings).
+if (args[0] == "--find" || args[0] == "--il")
+{
+    var asm2 = AssemblyDefinition.ReadAssembly(Path.GetFullPath(args[1]), new ReaderParameters { InMemory = true });
+    if (args[0] == "--find")
+    {
+        var rx = new System.Text.RegularExpressions.Regex(args[2], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (var t in asm2.MainModule.GetTypes())
+        {
+            foreach (var m in t.Methods) if (rx.IsMatch(m.Name)) Console.WriteLine($"method {t.FullName}::{m.Name}({string.Join(", ", m.Parameters.Select(p => p.ParameterType.Name))}) : {m.ReturnType.Name}");
+            foreach (var f in t.Fields) if (rx.IsMatch(f.Name)) Console.WriteLine($"field  {t.FullName}::{f.Name} : {f.FieldType.FullName}");
+            foreach (var p in t.Properties) if (rx.IsMatch(p.Name)) Console.WriteLine($"prop   {t.FullName}::{p.Name} : {p.PropertyType.FullName}");
+        }
+    }
+    else
+    {
+        var parts = args[2].Split("::");
+        var t = asm2.MainModule.GetTypes().First(x => x.FullName == parts[0] || x.Name == parts[0]);
+        foreach (var m in t.Methods.Where(x => x.Name == parts[1] && x.HasBody))
+        {
+            Console.WriteLine($"--- {t.FullName}::{m.Name}({string.Join(", ", m.Parameters.Select(p => p.ParameterType.Name + " " + p.Name))})");
+            foreach (var ins in m.Body.Instructions)
+            {
+                string op = ins.Operand switch
+                {
+                    null => "",
+                    MethodReference mr => $"{mr.DeclaringType.Name}::{mr.Name}",
+                    FieldReference fr => $"{fr.DeclaringType.Name}::{fr.Name}",
+                    Instruction target => $"IL_{target.Offset:x4}",
+                    Instruction[] targets => string.Join(",", targets.Select(x => $"IL_{x.Offset:x4}")),
+                    string s => $"\"{s}\"",
+                    _ => ins.Operand.ToString() ?? "",
+                };
+                Console.WriteLine($"  IL_{ins.Offset:x4} {ins.OpCode.Name,-12} {op}");
+            }
+        }
+    }
+    return 0;
+}
+
 string dll = Path.GetFullPath(args[0]);
 string orig = dll + ".orig";
 if (!File.Exists(orig))

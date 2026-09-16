@@ -17,6 +17,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { catalog, sets, setPieces, setPieceNames, itemById, slotOf, matches, SLOTS, SLOT_LABEL } from './data.js';
 import { loadTalentCatalog, talentById, formatTalent, fullName, groupsOf, CATEGORIES } from './talents.js';
 import { VALUES, VALUE_GROUPS, ATTRS, valueByKey, attrByName, formatAttrLine, readAttrSnapshot, LIVE_BARS, fmtNum } from './values.js';
@@ -125,11 +126,24 @@ function savedLine(cfg) {
   return keeperInstalled(cfg.file) ? 'Saved. Applies in game within a second.' : 'Saved. Press Ctrl+Enter in game (or reload the save).';
 }
 
-function describeTalents(cfg) {
-  if (!cfg.talents.length) return '  (none)';
-  const cat = loadTalentCatalog(cfg.file);
-  return cfg.talents.map((id) => formatTalent(talentById(cat, id))).join('\n');
+/** Everything the Buffs screen treats as active: talents (addTalents) and soaks (keeperSoaks). */
+const activeBuffIds = (cfg) => [...cfg.talents, ...cfg.soaks];
+
+/** Split a list of buff IDs into the two config lines, by catalog entry. */
+function splitBuffs(cat, ids) {
+  const talents = [], soaks = [];
+  for (const id of ids) (talentById(cat, id).line === 'soak' ? soaks : talents).push(id);
+  return { talents, soaks };
 }
+
+function describeTalents(cfg) {
+  const ids = activeBuffIds(cfg);
+  if (!ids.length) return '  (none)';
+  const cat = loadTalentCatalog(cfg.file);
+  return ids.map((id) => formatTalent(talentById(cat, id))).join('\n');
+}
+
+const SOAK_NOTE = 'Soak effects need the keeper (see Doctor); it is not installed on this game, so they will not apply.';
 
 function describeSaved(cfg) {
   if (!cfg.saved.length) return '  (no saved looks yet)';
@@ -193,18 +207,20 @@ Categories: ${CATEGORIES.join(' | ')}   (filter with: buffs list <category, set 
     }
     return;
   }
-  let talents = [...cfg.talents];
-  if (sub === 'clear') talents = [];
+  let active = activeBuffIds(cfg);
+  if (sub === 'clear') active = [];
   else if (sub === 'add' || sub === 'remove') {
     const queries = opts._.slice(2);
     if (!queries.length) throw new Error(`usage: wukong-transmog buffs ${sub} <name or id> [...]`);
     for (const q of queries) {
       const id = resolveTalent(cat, q);
-      if (sub === 'add' && !talents.includes(id)) talents.push(id);
-      if (sub === 'remove') talents = talents.filter((t) => t !== id);
+      if (sub === 'add' && !active.includes(id)) active.push(id);
+      if (sub === 'remove') active = active.filter((t) => t !== id);
     }
   } else throw new Error('usage: wukong-transmog buffs [list [words] | info <name|id> | add <name|id>... | remove <name|id>... | clear]');
-  writeConfig(cfg, {}, { backup: !opts['no-backup'], talents });
+  const split = splitBuffs(cat, active);
+  writeConfig(cfg, {}, { backup: !opts['no-backup'], ...split });
+  if (split.soaks.length && !keeperInstalled(cfg.file)) console.log('Note: ' + SOAK_NOTE);
   console.log('Written to ' + cfg.file + `
 
 Buffs (${TALENT_KEY}):`);
@@ -463,7 +479,7 @@ function describeBackupDiff(cfg, backupFile) {
   const old = readConfig(backupFile);
   const out = [];
   if (old.outfits.staff.join(',') !== cfg.outfits.staff.join(',')) out.push(`transmog: ${outfitSummary(old)}`);
-  if (old.talents.join(',') !== cfg.talents.join(',')) out.push(`buffs: ${old.talents.length} active`);
+  if (activeBuffIds(old).join(',') !== activeBuffIds(cfg).join(',')) out.push(`buffs: ${activeBuffIds(old).length} active`);
   for (const v of VALUES) if ((old.values[v.key] ?? '') !== (cfg.values[v.key] ?? '')) out.push(`${v.key} = ${old.values[v.key] ?? '?'}`);
   if (formatAttrLine(old.attrs) !== formatAttrLine(cfg.attrs)) out.push(`locks: ${old.attrs.length}`);
   if (old.saved.length !== cfg.saved.length) out.push(`saved looks: ${old.saved.length}`);
@@ -519,7 +535,23 @@ async function showBuffImpact(cfg, before) {
 // ---------- interactive ----------
 
 async function interactive(cfg, opts) {
-  const { select, search, confirm, input, Separator } = await import('@inquirer/prompts');
+  const raw = await import('@inquirer/prompts');
+  const { Separator } = raw;
+  // Esc goes back: the prompt library ignores Esc, but every prompt accepts an AbortSignal.
+  // A lone Esc keypress aborts the current prompt and the wrapper returns the "back" answer.
+  const escapable = (prompt, onEsc) => async (config, opts = {}) => {
+    const ac = new AbortController();
+    const onKey = (_s, key) => { if (key?.name === 'escape' && !key.ctrl && !key.meta) ac.abort(); };
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.on('keypress', onKey);
+    try { return await prompt(config, { ...opts, signal: ac.signal }); }
+    catch (e) { if (e?.name === 'AbortPromptError') return onEsc; throw e; }
+    finally { process.stdin.off('keypress', onKey); }
+  };
+  const select = escapable(raw.select, '__back__');
+  const search = escapable(raw.search, '__back__');
+  const input = escapable(raw.input, '');
+  const confirm = escapable(raw.confirm, false);
   const allTiers = !!opts['all-tiers'];
   const pool = catalog({ allTiers });
   const backup = !opts['no-backup'];
@@ -547,7 +579,7 @@ async function interactive(cfg, opts) {
     });
 
   console.log(`Transmog & Buff Tool ${VERSION}`);
-  console.log('Arrow keys to move, Enter to choose, Ctrl+C to quit. Typing narrows a list; every screen has "- back".\n');
+  console.log('Arrow keys to move, Enter to choose, Esc to go back (Esc in the main menu quits). Typing narrows a list.\n');
 
   for (;;) {
     const action = await select({
@@ -555,7 +587,7 @@ async function interactive(cfg, opts) {
       pageSize: 8,
       choices: [
         { name: `Transmog   change how my gear looks          (now: ${outfitSummary(cfg)})`, value: 'transmog' },
-        { name: `Buffs      set bonuses and weapon effects I don't own   (${cfg.talents.length} active)`, value: 'buffs' },
+        { name: `Buffs      set bonuses and weapon effects I don't own   (${activeBuffIds(cfg).length} active)`, value: 'buffs' },
         { name: 'Values     regeneration, speed, attack, defense', value: 'values' },
         { name: 'Undo       restore an earlier change', value: 'undo' },
         { name: 'Doctor     check the install and the logs when something does not work', value: 'doctor' },
@@ -563,7 +595,7 @@ async function interactive(cfg, opts) {
         { name: 'Quit', value: 'quit' },
       ],
     });
-    if (action === 'quit') return;
+    if (action === 'quit' || action === '__back__') return;
     if (action === 'transmog') await menuTransmog();
     else if (action === 'buffs') await menuBuffs();
     else if (action === 'values') await menuValues();
@@ -706,7 +738,7 @@ async function interactive(cfg, opts) {
         choices: [
           { name: '- back', value: '__back__' },
           { name: '+ add a buff', value: '__add__' },
-          ...cfg.talents.map((id) => {
+          ...activeBuffIds(cfg).map((id) => {
             const t = talentById(cat, id);
             return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
           }),
@@ -718,7 +750,7 @@ async function interactive(cfg, opts) {
         ],
       });
       if (pick === '__back__') return;
-      let talents = [...cfg.talents];
+      let talents = activeBuffIds(cfg);
       if (pick.startsWith('re:')) talents.push(parseInt(pick.slice(3), 10));
       else if (pick.startsWith('remove:')) talents = talents.filter((t) => t !== parseInt(pick.slice(7), 10));
       else if (pick === '__add__') {
@@ -727,7 +759,8 @@ async function interactive(cfg, opts) {
           choices: [{ name: '- back', value: '__back__' }, ...CATEGORIES.map((c) => ({ name: c, value: c }))],
         });
         if (category === '__back__') continue;
-        let items = cat.filter((t) => t.category === category && !cfg.talents.includes(t.id));
+        let items = cat.filter((t) => t.category === category && !activeBuffIds(cfg).includes(t.id));
+        if (category === 'Soaks' && !keeperInstalled(cfg.file)) console.log('  ' + SOAK_NOTE + '\n');
         if (category === 'Armor') {
           const group = await select({
             message: 'Which armor set?',
@@ -749,7 +782,7 @@ async function interactive(cfg, opts) {
         talents.push(id);
       }
       const before = keeperInstalled(cfg.file) ? readAttrSnapshot(cfg.file) : null;
-      writeConfig(cfg, {}, { backup, talents });
+      writeConfig(cfg, {}, { backup, ...splitBuffs(cat, talents) });
       saved();
       await showBuffImpact(cfg, before);
     }

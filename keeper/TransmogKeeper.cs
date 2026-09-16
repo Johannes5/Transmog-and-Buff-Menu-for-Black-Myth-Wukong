@@ -14,6 +14,8 @@
 //   keeperAttr            keeper-only: "Name:value,Name:value" attribute overrides
 //                         (names from EBGUAttrFloat, e.g. MpMax:500, StaminaRecover:2),
 //                         re-applied whenever the game changes them back
+//   keeperSoaks           keeper-only: soak item IDs (2301-2329) whose gourd effect is kept active by
+//                         raising Evt_TriggerWinePartner whenever one of the soak's buffs is missing
 //   keeperOutfits         keeper-only: saved looks "Name=id,id;Name=id,id"
 //   keeperOutfitKey       keeper-only: key ("F7", "Ctrl+F7", "None") that puts on the next saved
 //                         look in game; the chosen look is written back into staffTransmog /
@@ -41,7 +43,7 @@ namespace TransmogKeeper
     public class TransmogKeeper : ICSharpMod
     {
         public string Name => "TransmogKeeper";
-        public string Version => "1.5.0";
+        public string Version => "1.6.0";
 
         private static readonly string BaseDir = AppDomain.CurrentDomain.BaseDirectory; // b1/Binaries/Win64
         private static readonly string ConfigPath = Path.Combine(BaseDir, "CSharpLoader", "Mods", "TrueWukong", "TrueWukongConfig.txt");
@@ -70,6 +72,9 @@ namespace TransmogKeeper
         private readonly Dictionary<string, bool> _bool = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly List<(EBGUAttrFloat attr, float value)> _attrs = new List<(EBGUAttrFloat, float)>();
         private readonly List<(string name, List<int> ids)> _outfits = new List<(string, List<int>)>();
+        private readonly List<int> _soaks = new List<int>();                 // keeperSoaks: soak item IDs kept "drunk"
+        private readonly Dictionary<int, DateTime> _soakNext = new Dictionary<int, DateTime>();
+        private const double SoakRetrySeconds = 5;                            // re-trigger an instant/expired soak effect this often
         private string _hotkeyText = "F7"; // default when keeperOutfitKey is missing
         private CSharpModBase.Input.HotKeyItem _hotkey;
         private DateTime _configStamp = DateTime.MinValue;
@@ -131,6 +136,7 @@ namespace TransmogKeeper
                 // by the talent code) must not stop the others, and the look comes first.
                 Stage("look", () => KeepLook(pawn, name, data));
                 Stage("talents", () => KeepTalents(pawn, name));
+                Stage("soaks", () => KeepSoaks(pawn, name));
                 Stage("values", () => KeepValues(pawn, name));
                 Stage("snapshot", () => WriteAttrSnapshot(pawn));
             }
@@ -259,6 +265,43 @@ namespace TransmogKeeper
             }
             if (applied.Count > 0) Log($"Activated talents {string.Join(",", applied)} on {name}");
         }
+
+        // ---------- soaks (gourd additives) ----------
+        // Drinking from the gourd raises Evt_TriggerWinePartner(soakId); the game then adds the buffs of
+        // that soak's ConsumeDesc (BUS_UnitItemComp.OnTriggrWinePartnerEffect). The keeper raises the same
+        // event whenever one of the soak's buffs is missing, so the effect behaves as if you had just drunk.
+        // Instant effects (a buff that ends at once) are repeated every SoakRetrySeconds.
+
+        private void KeepSoaks(APawn pawn, string name)
+        {
+            if (_soaks.Count == 0) return;
+            if (Get(pawn, Hp) <= 0f) return;
+            object events = BUS_EventCollectionCS.Get(pawn);
+            if (events == null) return;
+            var now = DateTime.UtcNow;
+            foreach (int soak in _soaks)
+            {
+                DateTime next;
+                if (_soakNext.TryGetValue(soak, out next) && now < next) continue;
+                var desc = GameDBRuntime.GetConsumeDesc(soak);
+                if (desc == null) { LogOnce($"keeperSoaks: {soak} is not a consumable the game knows"); _soakNext[soak] = now.AddSeconds(60); continue; }
+                bool missing = false;
+                foreach (var fx in desc.ConsumeEffect)
+                {
+                    if (fx.EffectType != ResB1.ConsumeEffectType.Buff) continue;
+                    if (!BGUFunctionLibraryCS.BGUHasBuffByID(pawn, fx.EffectId)) { missing = true; break; }
+                }
+                if (!missing) { _soakNext[soak] = now.AddSeconds(1); continue; }
+                if (!InvokeEvent(events, "Evt_TriggerWinePartner", soak))
+                {
+                    LogOnce("Evt_TriggerWinePartner not found on the event collection; soaks are unavailable in this game build");
+                    return;
+                }
+                _soakNext[soak] = now.AddSeconds(SoakRetrySeconds);
+                if (!_soakLogged.Contains(soak)) { _soakLogged.Add(soak); Log($"Soak {soak} triggered on {name}"); }
+            }
+        }
+        private readonly HashSet<int> _soakLogged = new HashSet<int>();
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
 
@@ -416,6 +459,11 @@ namespace TransmogKeeper
                 foreach (var h in GameDBRuntime.GetTBHuluDesc().List)
                     sb.AppendLine($"H\t{h.Id}\t{h.Series}\t{h.Level}\t{h.NextId}\t{string.Join(",", h.BuffList)}");
             });
+            section("CONSUMES\tid\ttype\tskillId\twinePartnerTrigger\teffects(type:id)", () =>
+            {
+                foreach (var c in GameDBRuntime.GetTBConsumeDesc().List)
+                    sb.AppendLine($"C\t{c.Id}\t{c.Type}\t{c.SkillId}\t{c.WinePartnerTrigger}\t{string.Join(",", c.ConsumeEffect.Select(e => $"{e.EffectType}:{e.EffectId}"))}");
+            });
             section("ITEMS\tid\tname\ttypeName\titemType\tpackage\tparam1\tparam2\tbrief\tdesc\teffectDesc\thudEffectDesc", () =>
             {
                 var wanted = new HashSet<ResB1.ItemPackageType> { ResB1.ItemPackageType.WinePartner, ResB1.ItemPackageType.Wine, ResB1.ItemPackageType.WineUpgrade, ResB1.ItemPackageType.Recover, ResB1.ItemPackageType.SpecialEffect, ResB1.ItemPackageType.SpecialElixir, ResB1.ItemPackageType.AtkStrengthen, ResB1.ItemPackageType.DefStrengthen, ResB1.ItemPackageType.Resistance };
@@ -493,6 +541,8 @@ namespace TransmogKeeper
             _num.Clear();
             _bool.Clear();
             _attrs.Clear();
+            _soaks.Clear();
+            _soakNext.Clear();
             _lastPawn = "";       // force a re-check of the look
             _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
             _lastSpeedPawn = "";  // re-apply speed
@@ -514,6 +564,7 @@ namespace TransmogKeeper
                     else if (key == "addTalents") ParseIds(value, _talents);
                     else if (key == "keeperAttr") ParseAttrs(value);
                     else if (key == "keeperOutfits") ParseOutfits(value);
+                    else if (key == "keeperSoaks") ParseIds(value, _soaks);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
                     else
                     {

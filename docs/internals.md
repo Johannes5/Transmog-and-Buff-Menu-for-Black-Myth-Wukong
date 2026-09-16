@@ -63,6 +63,19 @@ wukong-transmog outfits delete boss
 wukong-transmog outfits key Ctrl+F7     # none = off
 ```
 
+## Soaks (keeperSoaks)
+
+A soak (泡酒物, item IDs 2301-2329, `ItemPackageType.WinePartner`) has no talent. Drinking raises
+`Evt_TriggerWinePartner(soakId)`; `BUS_UnitItemComp.OnTriggrWinePartnerEffect` then adds the buffs of
+`GameDBRuntime.GetConsumeDesc(soakId).ConsumeEffect` (buff IDs are 90000 + item ID). TransmogKeeper v1.6+
+reads `keeperSoaks = 2319,2309` and, once a second, raises the same event for every soak whose buffs are
+not all present (`BGUHasBuffByID`), at most every 5 s per soak. Names and texts: src/soaks.js, research in
+docs/soaks-research.md. Drinks (2001-2024) heal per sip and are not offered.
+
+The keeper also has a table dump for development: create `TransmogKeeperDump.txt` next to the log and it
+writes talents, wines, gourds, consumables (with effects) and consumable items to `TransmogKeeperTables.txt`.
+`dotnet run --project patcher -- --api|--find|--il <dll> <regex|Type::Method>` inspects the game assemblies.
+
 ## Doctor, update and uninstall
 
 `wukong-transmog doctor` (src/doctor.js) checks loader, mode, patched DLL (see below), keeper,

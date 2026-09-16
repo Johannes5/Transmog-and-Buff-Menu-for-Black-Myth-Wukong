@@ -11,9 +11,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sets } from './data.js';
 import { WEAPON_EFFECTS, SET_EFFECTS, UNIQUE_PIECES, CURIO_EFFECTS } from './effects.js';
+import { SOAKS } from './soaks.js';
 
 const LIST_FILE = 'TrueWukong-TalentList.txt';
-export const CATEGORIES = ['Armor', 'Weapons', 'Curios', 'Other'];
+export const CATEGORIES = ['Armor', 'Weapons', 'Curios', 'Soaks', 'Other'];
+// Catalog entries carry `line`: 'talent' (addTalents, True Wukong or the keeper) or 'soak' (keeperSoaks, keeper only).
 const UNIQUE_GROUP = 'Stand-alone pieces';
 const SLOT_NAMES = { 1: 'head', 2: 'body', 3: 'arms', 4: 'legs' };
 
@@ -22,7 +24,7 @@ const NO_TEXT = null;
 /** Parse "ID - chinese - English" lines of the mod's talent list into the catalog. */
 export function loadTalentCatalog(configFile) {
   const file = path.join(path.dirname(configFile), LIST_FILE);
-  if (!fs.existsSync(file)) return [];
+  if (!fs.existsSync(file)) return soakEntries();
   const setList = sets().filter((s) => !s.fixedTier);
   const families = new Map(setList.map((s) => [s.family, s]));
   const setOrder = setList.map((s) => s.family);
@@ -84,8 +86,10 @@ export function loadTalentCatalog(configFile) {
       entry = { category: 'Other', group: null, tier: null, name: modName, kind: 'talent', description: NO_TEXT };
     }
     const aliases = [chinese, modName, entry.category, entry.group ?? '', entry.tier ?? '', entry.kind].join(' ');
-    out.set(id, { id, slot: 'talent', aliases, note: entry.description ?? entry.kind, ...entry });
+    out.set(id, { id, slot: 'talent', line: 'talent', aliases, note: entry.description ?? entry.kind, ...entry });
   }
+
+  for (const s of soakEntries()) out.set(s.id, s);
 
   const groupRank = (e) => (e.group === UNIQUE_GROUP ? 999 : e.setFamily ? setOrder.indexOf(e.setFamily) : 0);
   const kindRank = (e) => (e.tier ? 2 : 0) + (/piece effect/.test(e.name) ? 1 : 0);
@@ -94,8 +98,15 @@ export function loadTalentCatalog(configFile) {
   );
 }
 
+function soakEntries() {
+  return SOAKS.map((s) => {
+    const kind = s.note === 'drink' ? 'soak effect that only matters while drinking; kept on anyway' : s.note === 'instant' ? 'soak effect that happens once per drink; the keeper repeats it every 5 s' : 'soak effect kept active as if just drunk';
+    return { id: s.id, slot: 'talent', line: 'soak', category: 'Soaks', group: null, tier: null, name: s.name, kind, description: s.text, aliases: `${s.zh} ${s.name} Soaks soak gourd ${kind}`, note: s.text };
+  });
+}
+
 export function talentById(catalog, id) {
-  return catalog.find((t) => t.id === id) ?? { id, slot: 'talent', category: 'Other', group: null, tier: null, name: `Unknown talent ${id}`, kind: 'unknown', description: null, note: '', aliases: '' };
+  return catalog.find((t) => t.id === id) ?? { id, slot: 'talent', line: 'talent', category: 'Other', group: null, tier: null, name: `Unknown talent ${id}`, kind: 'unknown', description: null, note: '', aliases: '' };
 }
 
 /** Distinct groups (armor sets) of a category, in catalog order. */

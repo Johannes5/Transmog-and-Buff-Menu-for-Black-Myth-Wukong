@@ -107,6 +107,19 @@ test('removed buffs are remembered as recent, newest first, and forgotten when r
   assert.match(fs.readFileSync(file, 'utf8'), /^recentBuffs = 106031\r\n/m);
 });
 
+test('soaks live on their own line and count as buffs for the recent list', () => {
+  const file = tmpConfig();
+  const cfg = readConfig(file);
+  writeConfig(cfg, {}, { backup: false, soaks: [2319, 2309] });
+  assert.deepEqual(cfg.soaks, [2319, 2309]);
+  assert.match(fs.readFileSync(file, 'utf8'), /^keeperSoaks = 2319,2309\r\n/m);
+  assert.deepEqual(cfg.talents, [901012, 106031]);   // untouched
+  writeConfig(cfg, {}, { backup: false, soaks: [2319] });
+  assert.deepEqual(cfg.recent, [2309]);
+  writeConfig(cfg, {}, { backup: false, talents: [], soaks: [] });
+  assert.deepEqual(cfg.recent, [901012, 106031, 2319, 2309]);
+});
+
 test('parseOutfits / formatOutfits', () => {
   assert.deepEqual(parseOutfits('A=1,2;B=0;=5;C'), [{ name: 'A', ids: [1, 2] }, { name: 'B', ids: [] }]);
   assert.equal(formatOutfits([]), '0');
