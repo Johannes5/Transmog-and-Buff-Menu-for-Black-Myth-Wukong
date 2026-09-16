@@ -54,7 +54,7 @@ Under Transmog > Saved looks you can save the current look under a name, put a s
 
 **Changing values.** Transmog, buffs and value changes apply within a second while the keeper is installed (it is, by default): the keeper also makes the mod re-read its config, so you never need Ctrl+Enter. Attack and defense multipliers take effect at the next respawn (shrine rest, transformation or reload). When you add or remove a buff while a save is loaded, the tool watches the game for a few seconds and shows which attributes moved.
 
-**Soaks.** A soak from the Soaks category behaves like one slotted in your gourd: every time you drink, its effect is applied for its normal duration, nothing more. You can have every soak "slotted" this way regardless of how many slots your gourd has. Soaks that in the game only fire under a condition (on resurrection, at full health, by chance) fire on every drink from the tool. Soaks need the keeper.
+**Soaks.** A soak from the Soaks category behaves like one slotted in your gourd: the keeper joins the game's own soak trigger, so the effect fires at the same moment of the drink as a slotted soak would, for its normal duration, nothing more. You can have every soak "slotted" this way regardless of how many slots your gourd has. Soaks need the keeper.
 
 **Using a trainer?** If WeMod, FLiNG or Cheat Engine stop attaching after installing the mod loader, close the game, open Options and turn on Trainer compatibility. Looks and buffs then apply within a second on their own. Attack and defense multipliers and the two cooldown timers are unavailable in this mode; the tool marks them.
 

@@ -90,10 +90,12 @@ game raises `Evt_TriggerWinePartner(triggerType)`; `BUS_PlayerItemSystem.OnTrigg
 soaks slotted in the current wine, and for each whose `ConsumeDesc.WinePartnerTrigger` equals the type
 calls `OnTriggrWinePartnerEffect(itemId)`, which adds the buffs of `ConsumeDesc.ConsumeEffect` (buff IDs
 are mostly 90000 + item ID) via `Evt_BuffAdd(id, owner, owner, 0, source 40)`. The event therefore
-cannot be used for soaks that are not slotted. TransmogKeeper v1.6+ reads `keeperSoaks = 2319,2309`,
-adds its `OnDrinkEnd` handler to the pawn's `BUS_EventCollectionCS.Evt_PoleDrinkStateEnd` delegate field
-(reflection, re-done per pawn) and, on the next tick after a drink ends, calls `BGUAddBuff` for every buff
-of every listed soak, i.e. exactly what a slotted soak does, on every drink regardless of trigger type.
+cannot be used for soaks that are not slotted. TransmogKeeper v1.7+ reads `keeperSoaks = 2319,2309`,
+adds its own handler to the same `Evt_TriggerWinePartner` (via the GSDel `+` operator on the collection
+`BUS_EventCollectionCS.Get(pawn)` returns, re-added when the game rebuilds the event after a gourd change)
+and, for each listed soak whose `WinePartnerTrigger` equals the raised type, calls `BGUAddBuff` for its
+buffs right there on the game thread. Timing matters: Deathstinger (type 3) only poisons when its 100 ms
+build-up buff lands before the heal.
 Names and texts: src/soaks.js, research in docs/soaks-research.md. Drinks (2001-2024) heal per sip and
 are not offered.
 
