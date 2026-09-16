@@ -125,6 +125,7 @@ namespace TransmogKeeper
 
                 LogEquipState(name, data);
                 if (File.Exists(DebugMarker)) LogBuffState(pawn);
+                if (!_dumped && File.Exists(DumpMarker)) Stage("dump", DumpTables);
 
                 // Each stage is isolated: a failure in one (e.g. a game update renaming a type used
                 // by the talent code) must not stop the others, and the look comes first.
@@ -383,6 +384,57 @@ namespace TransmogKeeper
         }
 
         // ---------- diagnostics ----------
+
+        // Developer dump: create TransmogKeeperDump.txt next to the log and the keeper writes the game's
+        // talent, wine and item tables (soaks, drinks, gourds, consumables) to TransmogKeeperTables.txt once.
+        private static readonly string DumpMarker = Path.Combine(BaseDir, "TransmogKeeperDump.txt");
+        private static readonly string DumpPath = Path.Combine(BaseDir, "TransmogKeeperTables.txt");
+        private bool _dumped;
+
+        private void DumpTables()
+        {
+            _dumped = true;
+            var sb = new System.Text.StringBuilder();
+            var section = new Action<string, Action>((title, body) =>
+            {
+                sb.AppendLine(title);
+                try { body(); } catch (Exception e) { sb.AppendLine("  error: " + e.Message); }
+                sb.AppendLine();
+            });
+            section("TALENTS\tid\tname\ttype\trank\tgroup\taddBuffIDs\tpassiveSkillIDs\tmaxLevel\thide", () =>
+            {
+                foreach (var t in GameDBRuntime.GetTBTalentSDesc().List)
+                    sb.AppendLine($"T\t{t.Id}\t{t.Name}\t{t.Type}\t{t.Rank}\t{t.TalentGroupId}\t{t.AddBuffIDs}\t{t.PassiveSkillIDs}\t{t.MaxLevel}\t{t.IsHide}");
+            });
+            section("WINES\tid\tseries\tlevel\tnext\titemListCount", () =>
+            {
+                foreach (var w in GameDBRuntime.GetTBWineDesc().List)
+                    sb.AppendLine($"W\t{w.Id}\t{w.Series}\t{w.Level}\t{w.NextId}\t{w.ItemListCount}");
+            });
+            section("HULUS\tid\tseries\tlevel\tnext\tbuffList", () =>
+            {
+                foreach (var h in GameDBRuntime.GetTBHuluDesc().List)
+                    sb.AppendLine($"H\t{h.Id}\t{h.Series}\t{h.Level}\t{h.NextId}\t{string.Join(",", h.BuffList)}");
+            });
+            section("ITEMS\tid\tname\ttypeName\titemType\tpackage\tparam1\tparam2\tbrief\tdesc\teffectDesc\thudEffectDesc", () =>
+            {
+                var wanted = new HashSet<ResB1.ItemPackageType> { ResB1.ItemPackageType.WinePartner, ResB1.ItemPackageType.Wine, ResB1.ItemPackageType.WineUpgrade, ResB1.ItemPackageType.Recover, ResB1.ItemPackageType.SpecialEffect, ResB1.ItemPackageType.SpecialElixir, ResB1.ItemPackageType.AtkStrengthen, ResB1.ItemPackageType.DefStrengthen, ResB1.ItemPackageType.Resistance };
+                int found = 0;
+                for (int id = 1; id < 300000; id++)
+                {
+                    ResB1.ItemDesc d;
+                    try { d = GameDBRuntime.GetItemDesc(id); } catch { continue; }
+                    if (d == null) continue;
+                    found++;
+                    if (!wanted.Contains(d.PackageType) && d.ItemType != ResB1.ItemType.WineUpgrade && d.ItemType != ResB1.ItemType.HuluUpgrade) continue;
+                    string clean(string s) => (s ?? "").Replace("\r", " ").Replace("\n", " ").Replace("\t", " ");
+                    sb.AppendLine($"I\t{d.Id}\t{clean(d.Name)}\t{clean(d.TypeName)}\t{d.ItemType}\t{d.PackageType}\t{d.Param1}\t{d.Param2}\t{clean(d.BriefDesc)}\t{clean(d.Desc)}\t{clean(d.EffectDesc)}\t{clean(d.HudEffectDesc)}");
+                }
+                sb.AppendLine($"# items scanned: {found}");
+            });
+            File.WriteAllText(DumpPath, sb.ToString());
+            Log("Tables dumped to " + DumpPath);
+        }
 
         private void LogEquipState(string pawnName, IBUC_EquipData data)
         {

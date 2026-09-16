@@ -7,6 +7,8 @@ import { parseAttrLine, formatAttrLine } from './values.js';
 export const CONFIG_REL = path.join('b1', 'Binaries', 'Win64', 'CSharpLoader', 'Mods', 'TrueWukong', 'TrueWukongConfig.txt');
 export const KEYS = { staff: 'staffTransmog', spear: 'spearTransmog' };
 export const TALENT_KEY = 'addTalents';
+export const RECENT_KEY = 'recentBuffs';     // tool only: buffs removed lately, newest first (the menu offers to reactivate them)
+export const RECENT_KEPT = 12;
 export const ATTR_KEY = 'keeperAttr';
 export const OUTFITS_KEY = 'keeperOutfits';   // "Name=id,id;Other name=id,id"  saved looks (TransmogKeeper v1.5+ cycles them)
 export const HOTKEY_KEY = 'keeperOutfitKey';  // "F7", "Ctrl+F7", "None"        key that puts on the next saved look in game
@@ -100,6 +102,7 @@ export function readConfig(file) {
   return {
     file, raw, eol, lines, outfits, values,
     talents: parseIds(values[TALENT_KEY]),
+    recent: parseIds(values[RECENT_KEY]),
     attrs: parseAttrLine(values[ATTR_KEY]),
     saved: parseOutfits(values[OUTFITS_KEY]),
     hotkey: values[HOTKEY_KEY] === undefined || values[HOTKEY_KEY] === '' ? DEFAULT_HOTKEY : values[HOTKEY_KEY] === '0' ? 'None' : values[HOTKEY_KEY],
@@ -111,6 +114,13 @@ export function readConfig(file) {
  * lines when given. A dated backup is written first (unless backup = false) and old backups pruned.
  */
 export function writeConfig(cfg, outfits, { backup = true, talents, values, attrs, saved, hotkey } = {}) {
+  // Buffs that leave the active list are remembered as "recently active" (newest first, capped).
+  let recent;
+  if (talents) {
+    const fresh0 = readConfig(cfg.file);
+    const gone = fresh0.talents.filter((id) => !talents.includes(id));
+    recent = [...gone, ...fresh0.recent.filter((id) => !gone.includes(id) && !talents.includes(id))].slice(0, RECENT_KEPT);
+  }
   // Always start from what is on disk right now: another CLI window, the game or a text editor may
   // have changed other lines since this session read the file (an older version re-used the lines
   // read at startup and silently reverted a transmog chosen from a second window).
@@ -131,6 +141,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, values, attr
     if (grip in outfits) setIds(KEYS[grip], outfits[grip], 'transmog IDs');
   }
   if (talents) setIds(TALENT_KEY, talents, 'talents activated on the player');
+  if (recent) setIds(RECENT_KEY, recent, 'Transmog & Buff Tool only: buffs removed lately (the menu offers to reactivate them)');
   if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);
   if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');
   if (saved) setLine(OUTFITS_KEY, formatOutfits(saved), 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)');

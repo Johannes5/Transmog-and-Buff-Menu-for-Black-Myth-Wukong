@@ -16,6 +16,22 @@ if (args.Length < 1)
     return 2;
 }
 
+// Developer helper: `--api <dll> <type regex>` lists matching types with their members (Mono.Cecil, no loading).
+if (args[0] == "--api")
+{
+    var apiRx = new System.Text.RegularExpressions.Regex(args.Length > 2 ? args[2] : ".", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    var apiAsm = AssemblyDefinition.ReadAssembly(Path.GetFullPath(args[1]), new ReaderParameters { InMemory = true });
+    foreach (var t in apiAsm.MainModule.GetTypes())
+    {
+        if (!apiRx.IsMatch(t.FullName)) continue;
+        Console.WriteLine($"{(t.IsEnum ? "enum " : t.IsInterface ? "interface " : "class ")}{t.FullName}");
+        foreach (var f in t.Fields) if (f.IsPublic || t.IsEnum) Console.WriteLine($"  field  {f.FieldType.Name} {f.Name}{(f.HasConstant ? " = " + f.Constant : "")}");
+        foreach (var p in t.Properties) Console.WriteLine($"  prop   {p.PropertyType.Name} {p.Name}");
+        foreach (var m in t.Methods) if (m.IsPublic && !m.IsGetter && !m.IsSetter) Console.WriteLine($"  method {(m.IsStatic ? "static " : "")}{m.ReturnType.Name} {m.Name}({string.Join(", ", m.Parameters.Select(p => p.ParameterType.Name + " " + p.Name))})");
+    }
+    return 0;
+}
+
 string dll = Path.GetFullPath(args[0]);
 string orig = dll + ".orig";
 if (!File.Exists(orig))

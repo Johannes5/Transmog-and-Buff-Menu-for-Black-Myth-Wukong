@@ -160,6 +160,10 @@ function cmdTalents(cfg, opts) {
   if (!sub) {
     console.log(`Buffs (${TALENT_KEY}):`);
     console.log(describeTalents(cfg));
+    if (cfg.recent.length) {
+      console.log('\nRecently active (buffs add <id> puts one back):');
+      for (const id of cfg.recent) console.log(`  ${String(id).padEnd(7)} ${fullName(talentById(cat, id))}`);
+    }
     console.log('\nCommands: buffs list [words] | buffs info <name|id> | buffs add <name|id>... | buffs remove <name|id>... | buffs clear');
     return;
   }
@@ -515,7 +519,7 @@ async function showBuffImpact(cfg, before) {
 // ---------- interactive ----------
 
 async function interactive(cfg, opts) {
-  const { select, search, confirm, input } = await import('@inquirer/prompts');
+  const { select, search, confirm, input, Separator } = await import('@inquirer/prompts');
   const allTiers = !!opts['all-tiers'];
   const pool = catalog({ allTiers });
   const backup = !opts['no-backup'];
@@ -704,13 +708,20 @@ async function interactive(cfg, opts) {
           { name: '+ add a buff', value: '__add__' },
           ...cfg.talents.map((id) => {
             const t = talentById(cat, id);
-            return { name: `x remove: ${fullName(t)}`, value: id, description: t.description ?? undefined };
+            return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
+          }),
+          ...(cfg.recent.length ? [new Separator('Recently active')] : []),
+          ...cfg.recent.map((id) => {
+            const t = talentById(cat, id);
+            return { name: `+ reactivate: ${fullName(t)}`, value: `re:${id}`, description: t.description ?? undefined };
           }),
         ],
       });
       if (pick === '__back__') return;
       let talents = [...cfg.talents];
-      if (pick === '__add__') {
+      if (pick.startsWith('re:')) talents.push(parseInt(pick.slice(3), 10));
+      else if (pick.startsWith('remove:')) talents = talents.filter((t) => t !== parseInt(pick.slice(7), 10));
+      else if (pick === '__add__') {
         const category = await select({
           message: 'Which kind of buff?',
           choices: [{ name: '- back', value: '__back__' }, ...CATEGORIES.map((c) => ({ name: c, value: c }))],
@@ -736,7 +747,7 @@ async function interactive(cfg, opts) {
         });
         if (id === '__back__') continue;
         talents.push(id);
-      } else talents = talents.filter((t) => t !== pick);
+      }
       const before = keeperInstalled(cfg.file) ? readAttrSnapshot(cfg.file) : null;
       writeConfig(cfg, {}, { backup, talents });
       saved();

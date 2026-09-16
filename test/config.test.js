@@ -95,6 +95,18 @@ test('new keys are appended with a comment; saved looks and the key round-trip',
   assert.equal(again.hotkey, 'Ctrl+F7');
 });
 
+test('removed buffs are remembered as recent, newest first, and forgotten when re-added', () => {
+  const file = tmpConfig();
+  const cfg = readConfig(file);
+  writeConfig(cfg, {}, { backup: false, talents: [106031] });          // 901012 removed
+  assert.deepEqual(cfg.recent, [901012]);
+  writeConfig(cfg, {}, { backup: false, talents: [] });                // 106031 removed
+  assert.deepEqual(cfg.recent, [106031, 901012]);
+  writeConfig(cfg, {}, { backup: false, talents: [901012] });          // back again
+  assert.deepEqual(cfg.recent, [106031]);
+  assert.match(fs.readFileSync(file, 'utf8'), /^recentBuffs = 106031\r\n/m);
+});
+
 test('parseOutfits / formatOutfits', () => {
   assert.deepEqual(parseOutfits('A=1,2;B=0;=5;C'), [{ name: 'A', ids: [1, 2] }, { name: 'B', ids: [] }]);
   assert.equal(formatOutfits([]), '0');
