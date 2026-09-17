@@ -33,7 +33,7 @@ Buffs      one list of everything active: set bonuses, piece and weapon effects,
            and custom buffs (value changes such as regen, speed, attack, defense; attribute locks)
 Undo       restore an earlier change
 Doctor     check the install and the logs when something does not work
-Options    trainer compatibility, game folder, status, uninstall
+Options    trainer compatibility, pause the mod, game folder, status, uninstall
 ```
 
 Command line equivalents: `wukong-transmog show | list | set | outfits | buffs | values | undo | doctor | mod | uninstall`. Run `wukong-transmog help`.
@@ -56,7 +56,7 @@ Under Transmog > Saved looks you can save the current look under a name, put a s
 
 **Soaks.** A soak from the Soaks category behaves like one slotted in your gourd: the keeper joins the game's own soak trigger, so the effect fires at the same moment of the drink as a slotted soak would, for its normal duration, nothing more. You can have every soak "slotted" this way regardless of how many slots your gourd has. Soaks need the keeper.
 
-**Using a trainer?** If WeMod, FLiNG or Cheat Engine stop attaching after installing the mod loader, close the game, open Options and turn on Trainer compatibility. Looks and buffs then apply within a second on their own. Attack and defense multipliers and the two cooldown timers are unavailable in this mode; the tool marks them.
+**Using a trainer?** If WeMod, FLiNG or Cheat Engine stop attaching after installing the mod loader, close the game, open Options and turn on Trainer compatibility. Looks and buffs then apply within a second on their own. Attack and defense multipliers and the two cooldown timers are unavailable in this mode; the tool marks them. If a trainer still misbehaves, Options > Pause the mod switches the mod loader off entirely: the game starts unmodded, your config and looks stay, and the same entry brings everything back.
 
 **What is written where.** One file: `CSharpLoader\Mods\TrueWukong\TrueWukongConfig.txt`, with a dated backup before every save (the last 30 are kept); Undo restores any of them. Save games, Steam files and your real gear and stats are never touched. Buffs are activated on the character while the mod runs and are gone once it is removed.
 

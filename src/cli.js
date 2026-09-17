@@ -29,7 +29,7 @@ import {
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
 import { DEFAULT_PRESETS, migratePresets, presetActive, presetChange, presetFromCurrent, describePreset, presetText, cleanDesc, validPresetName, coveredByActivePresets } from './presets.js';
 import { readOwned, isOwned, isSetOwned } from './owned.js';
-import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
+import { modPaths, modState, setMode, readJit, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
 
 // ---------- config file ----------
@@ -665,7 +665,7 @@ async function interactive(cfg, opts) {
         { name: `Buffs      set bonuses, weapon effects, soaks, value changes   (${activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).length + VALUES.filter((v) => !isDefault(v, cfg.values[v.key]) && !coveredByActivePresets(cfg).keys.has(v.key)).length + cfg.attrs.length + cfg.presets.filter((p) => presetActive(p, cfg)).length} active)`, value: 'buffs' },
         { name: 'Undo       restore an earlier change', value: 'undo' },
         { name: 'Doctor     check the install and the logs when something does not work', value: 'doctor' },
-        { name: 'Options    trainer compatibility, game folder, status, uninstall', value: 'options' },
+        { name: 'Options    trainer compatibility, pause the mod, game folder, status, uninstall', value: 'options' },
         { name: 'Quit', value: 'quit' },
       ],
     });
@@ -1035,18 +1035,26 @@ async function interactive(cfg, opts) {
       const p = modPaths(cfg.file);
       const st = modState(p);
       const trainer = st.mode === 'lite';
+      const paused = st.mode === 'off';
       const pick = await select({
         message: 'Options',
         pageSize: 10,
         choices: [
           { name: '- back', value: '__back__' },
           { name: `Trainer compatibility   ${trainer ? 'ON' : 'off'}   (turn on if WeMod/FLiNG/Cheat Engine cannot attach)`, value: 'trainer', description: 'Runs the in-game mod without hooks. Looks and buffs still apply within a second; attack/defense multipliers and the cooldown timers are unavailable. Needs the game closed to switch.' },
+          { name: `Pause the mod           ${paused ? 'PAUSED (the game starts without the mod)' : 'off'}`, value: 'pause', description: 'Switches the mod loader off, so the game starts completely unmodded: no looks, no buffs, nothing loaded. Use it when a trainer or another tool misbehaves with the mod. Your config and saved looks stay; unpause to get everything back. Needs the game closed to switch.' },
           { name: `Game folder             ${gameDirOf(cfg.file)}`, value: 'folder', description: 'Change which game installation the tool works on, or reinstall the in-game part there. The choice is remembered in settings.json next to the tool.' },
           { name: `Status                  mod ${st.mode}, keeper ${st.keeper ? 'installed' : 'not installed'}, last log lines`, value: 'status' },
           { name: 'Uninstall               remove the in-game part (restores what it replaced)', value: 'uninstall' },
         ],
       });
       if (pick === '__back__') return;
+      if (pick === 'pause') {
+        if (gameRunning()) { console.log('  Close the game first, then switch this.\n'); continue; }
+        cmdMod(cfg, { _: ['mod', paused ? (readJit(p.ini) ? 'full' : 'lite') : 'off'] });
+        console.log();
+        continue;
+      }
       if (pick === 'trainer') {
         if (gameRunning()) { console.log('  Close the game first, then switch this.\n'); continue; }
         const want = trainer ? 'full' : 'lite';
