@@ -11,7 +11,8 @@ export const TALENT_KEY = 'addTalents';
 export const PRESETS_KEY = 'keeperPresets';   // named buffs "Name{talents=..;soaks=..;values=k:on:off;key=F8};..." (TransmogKeeper v1.7+ toggles by key)
 export const BUFFS_KEY = 'keeperBuffs';      // TransmogKeeper v1.7+: kept buffs "id" (re-added whenever missing) or "id@heavy" (added on a 3+ point heavy attack)
 /** Mode per kept buff ID; written as "id@mode" so the keeper knows when to add it. */
-export const KEPT_BUFF_MODES = { 92313: 'heavy' };
+export const HEAVY_STING_ID = 990001;        // not a game buff: "990001@sting" tells the keeper to poison what a 3+ point heavy attack hits
+export const KEPT_BUFF_MODES = { 92313: 'heavy', [HEAVY_STING_ID]: 'sting' };
 export const formatBuffs = (ids) => (ids.length ? ids.map((id) => (KEPT_BUFF_MODES[id] ? `${id}@${KEPT_BUFF_MODES[id]}` : String(id))).join(',') : '0');
 export const SOAKS_KEY = 'keeperSoaks';      // TransmogKeeper v1.6+: soak item IDs whose gourd effect is kept active
 export const RECENT_KEY = 'recentBuffs';     // tool only: buffs removed lately, newest first (the menu offers to reactivate them)
@@ -162,7 +163,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs
   }
   if (talents) setIds(TALENT_KEY, talents, 'talents activated on the player');
   if (presets) setLine(PRESETS_KEY, formatPresets(presets), 'named buffs: Name{talents=ids;soaks=ids;values=key:on:off;key=F8} (see wukong-transmog presets)');
-  if (buffs) setLine(BUFFS_KEY, formatBuffs(buffs), 'TransmogKeeper only: kept buffs, "id" = re-added whenever missing, "id@heavy" = added on a 3+ point heavy attack (see wukong-transmog buffs)');
+  if (buffs) setLine(BUFFS_KEY, formatBuffs(buffs), 'TransmogKeeper only: kept buffs, "id" = re-added whenever missing, "id@heavy" = added on a 3+ point heavy attack, "id@sting" = such an attack poisons the enemy (see wukong-transmog buffs)');
   if (soaks) setIds(SOAKS_KEY, soaks, 'TransmogKeeper only: soaks (gourd additives) whose effect is kept active as if just drunk');
   if (recent) setIds(RECENT_KEY, recent, 'Transmog & Buff Tool only: buffs removed lately (the menu offers to reactivate them)');
   if (values) for (const [k, v] of Object.entries(values)) setLine(k, v, k);

@@ -99,6 +99,18 @@ build-up buff lands before the heal.
 Names and texts: src/soaks.js, research in docs/soaks-research.md. Drinks (2001-2024) heal per sip and
 are not offered.
 
+## Kept buffs (keeperBuffs)
+
+`keeperBuffs = 92200,92313@heavy,990001@sting`. A plain ID is re-added whenever it is missing. `@heavy`
+IDs are added to the player when the Focus gauge (attr 191, polled every 100 ms) drops by 3+ points in one
+step, i.e. a charged heavy attack is unleashed. `@sting` (Heavy Sting; 990001 is only a name, not a game
+buff) opens a 2.5 s window on the same signal; the keeper's handler on the world's
+`BGW_EventCollection.Evt_ReportSkillDamageInfo` (raised by `BUS_BeAttackedComp.DoDamageLogic` for every
+damage) then fills the poison build-up of each enemy the player hits, once per enemy, through the victim's
+`Evt_HandleAbnormal(Abnormal_Poison, attacker, IncreaseByINV10000, 10000, level)`, which is what
+`BGUHandleAbnormalState` calls. The Spider Celestial Staff talent itself (105013) only adds marker buff
+2004; its "while Poisoned" condition sits in the attack data and cannot be switched off from a table.
+
 The keeper also has a table dump for development: create `TransmogKeeperDump.txt` next to the log and it
 writes talents, wines, gourds, consumables (with effects) and consumable items to `TransmogKeeperTables.txt`.
 `dotnet run --project patcher -- --api|--find|--il <dll> <regex|Type::Method>` inspects the game assemblies.

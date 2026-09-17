@@ -110,6 +110,7 @@ function soakEntries() {
 function keptBuffEntries() {
   return [
     { id: 92313, slot: 'talent', line: 'buff', category: 'Weapons', group: null, tier: null, name: 'Venomous heavy attacks: a 4-point heavy (3 in Pillar stance) poisons you too', kind: 'the keeper watches the Focus gauge; when 3 or more points are spent at once it applies the poison build-up, so that heavy attack\'s hit poisons you as well', description: 'Changes how a full-charge heavy attack works: a 4 Focus point heavy (3 in Pillar stance) poisons you as well as the enemy. Pairs with the Spider Celestial Staff effect.', aliases: 'venomous heavy attack poison self focus stinger', note: 'venomous heavy' },
+    { id: 990001, slot: 'talent', line: 'buff', category: 'Weapons', group: null, tier: null, name: 'Heavy Sting: a 4-point heavy (3 in Pillar stance) poisons the enemy', kind: 'a modified version of the Spider Celestial Staff effect; the keeper watches the Focus gauge and, when 3 or more points are spent at once, poisons what that heavy attack hits', description: 'Modified Spider Celestial Staff effect: a 4 Focus point heavy (3 in Pillar stance) inflicts Poison Bane on the enemy, whether or not you are Poisoned yourself.', aliases: 'heavy sting spider celestial staff poison enemy focus', note: 'heavy sting' },
   ];
 }
 

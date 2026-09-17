@@ -9,7 +9,7 @@ Wear any look, use any effect. A menu-driven tool for Black Myth: Wukong that le
 
 Pick everything by name with the arrow keys. In a look list, Enter (or the right arrow) puts the highlighted look on and keeps the list open, so you can try several in a row with the game running; Esc goes back. Every change is backed up and can be undone from the menu.
 
-Built on a fork of True Wukong, bundled with its author's permission; the in-game part of this tool is that mod. Credits at the bottom.
+Built on a fork of True Wukong by k0v3rt, bundled with his permission; the in-game part of this tool is that mod. Credits at the bottom.
 
 ## Installation
 
@@ -40,7 +40,7 @@ Command line equivalents: `wukong-transmog show | list | set | outfits | buffs |
 
 ## Named buffs
 
-A named buff bundles any number of buffs, soaks and value changes under one name, so "Stinger" or "Defence +40%" is one entry you switch on or off. The Buffs screen lists them first. "+ save the active buffs as a named buff" turns whatever is active right now into one; each named buff can get an **in-game key** that toggles it while you play (for example F8), and can be renamed, updated or deleted. A few come with the tool: Movement Speed 2x, Defence +40%, Defence +20%, Mana Regen and Stinger.
+A named buff bundles any number of buffs, soaks and value changes under one name, so "Self Stinger" or "Defence +40%" is one entry you switch on or off. The Buffs screen lists them first. "+ save the active buffs as a named buff" turns whatever is active right now into one; each named buff can get an **in-game key** that toggles it while you play (for example F8), and can be renamed, updated or deleted. A few come with the tool: Movement Speed 2x, Defence +40%, Defence +20%, Mana Regen, Self Stinger (heavy attacks poison the enemy and you) and Heavy Sting (a modified Spider Celestial Staff effect: heavy attacks that spend 3+ Focus points poison the enemy, whether or not you are poisoned).
 
 ## Only looks you have unlocked
 
@@ -82,7 +82,7 @@ Run **Doctor** from the menu (or `wukong-transmog doctor`). It checks the loader
 
 ## Credits and permissions
 
-- The in-game part is a fork of True Wukong by its author on Nexus Mods, bundled and modified with the author's permission.
+- The in-game part is a fork of True Wukong by k0v3rt (Nexus Mods), bundled and modified with k0v3rt's permission.
 - CSharpLoader by czastack: the mod loader, bundled.
 - Node.js runtime, bundled (MIT licence, see `node\LICENSE`).
 - Buff descriptions from the Black Myth: Wukong community wikis (Fextralife, Game8, Fandom).

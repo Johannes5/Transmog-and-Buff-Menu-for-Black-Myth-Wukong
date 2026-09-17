@@ -2,7 +2,7 @@
 // switched on and off as a whole, optionally with an in-game key (TransmogKeeper v1.7+ toggles it).
 //
 // Config line (keeperPresets), one preset per `Name{...}` block, blocks separated by ";":
-//   keeperPresets = Stinger{talents=105013,901411;buffs=92313;key=F8};Movement Speed 2x{values=wukongSpeed:2:1;key=F9}
+//   keeperPresets = Self Stinger{talents=105013,901411;buffs=92313;key=F8};Movement Speed 2x{values=wukongSpeed:2:1;key=F9}
 //   talents  addTalents IDs        soaks  keeperSoaks IDs        buffs  keeperBuffs IDs
 //   values   key:on:off triples   (on = the value while the preset is active, off = what "off" restores)
 //   key      in-game toggle key or None
@@ -19,8 +19,24 @@ export const DEFAULT_PRESETS = [
   { name: 'Defence +20%', talents: [], soaks: [], buffs: [], values: { defenseMultiplier: ['12E-1', '1'] }, key: 'None' },
   { name: 'Mana Regen', talents: [], soaks: [], buffs: [], values: { manaRegen: ['4', '0'] }, key: 'None' },
   // Spider Celestial Staff + Centipede 2-piece + venomous heavy attacks (a full-charge heavy poisons you too)
-  { name: 'Stinger', talents: [105013, 901411], soaks: [], buffs: [92313], values: {}, key: 'None', desc: "Custom Buff: similar to the Spider Celestial Staff effect. You inflict Poison Bane on the enemy with 3+ Focus heavy attacks, but also on yourself, while taking less damage from your own poison (via the Centipede 2-piece bonus)." },
+  { name: 'Self Stinger', talents: [105013, 901411], soaks: [], buffs: [92313], values: {}, key: 'None', desc: "Custom Buff: similar to the Spider Celestial Staff effect. You inflict Poison Bane on the enemy with 3+ Focus heavy attacks, but also on yourself, while taking less damage from your own poison (via the Centipede 2-piece bonus)." },
+  // 990001 = HEAVY_STING_ID in config.js (which imports this file): the keeper poisons whatever a 3+ point heavy attack hits
+  { name: 'Heavy Sting', talents: [], soaks: [], buffs: [990001], values: {}, key: 'None', desc: "Custom Buff: a modified version of the Spider Celestial Staff effect. Heavy attacks that spend 3+ Focus points inflict Poison Bane on the enemy, whether or not you are Poisoned yourself." },
 ];
+
+/**
+ * Configs seeded before "Stinger" became "Self Stinger": rename the untouched default and add Heavy Sting
+ * next to it. Returns the new list, or null when there is nothing to do.
+ */
+export function migratePresets(list) {
+  const old = DEFAULT_PRESETS.find((p) => p.name === 'Self Stinger');
+  const same = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
+  const i = list.findIndex((p) => p.name === 'Stinger' && same(p.talents, old.talents) && same(p.buffs ?? [], old.buffs) && !p.soaks.length && !Object.keys(p.values).length);
+  if (i < 0 || list.some((p) => p.name === old.name)) return null;
+  const out = list.map((p, n) => (n === i ? { ...p, name: old.name } : p));
+  if (!out.some((p) => p.name === 'Heavy Sting')) out.splice(i + 1, 0, DEFAULT_PRESETS.find((p) => p.name === 'Heavy Sting'));
+  return out;
+}
 
 const ids = (s) => String(s ?? '').split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => Number.isInteger(n) && n > 0);
 const empty = (name) => ({ name, talents: [], soaks: [], buffs: [], values: {}, key: 'None' });

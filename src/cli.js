@@ -27,7 +27,7 @@ import {
   CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, validOutfitName,
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
-import { DEFAULT_PRESETS, presetActive, presetChange, presetFromCurrent, describePreset, presetText, cleanDesc, validPresetName, coveredByActivePresets } from './presets.js';
+import { DEFAULT_PRESETS, migratePresets, presetActive, presetChange, presetFromCurrent, describePreset, presetText, cleanDesc, validPresetName, coveredByActivePresets } from './presets.js';
 import { readOwned, isOwned, isSetOwned } from './owned.js';
 import { modPaths, modState, setMode, keeperInstalled, trainerMode, tailLines } from './mod.js';
 import { runDoctor } from './doctor.js';
@@ -839,7 +839,7 @@ async function interactive(cfg, opts) {
           { name: '+ save the active buffs as a named buff', value: '__preset_save__' },
           ...(cfg.presets.length ? [new Separator('Named buffs (Enter: on/off, key, edit)')] : []),
           ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: presetText(p, cat, (id) => fullName(talentById(cat, id))) })),
-          ...(activeBuffIds(cfg).some((id) => !coveredByActivePresets(cfg).ids.has(id)) || changedValues().some((v) => !coveredByActivePresets(cfg).keys.has(v.key)) || cfg.attrs.length ? [new Separator('Active (on their own; parts of a named buff that is on are listed under it)')] : []),
+          ...(activeBuffIds(cfg).some((id) => !coveredByActivePresets(cfg).ids.has(id)) || changedValues().some((v) => !coveredByActivePresets(cfg).keys.has(v.key)) || cfg.attrs.length ? [new Separator('Active')] : []),
           ...activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).map((id) => {
             const t = talentById(cat, id);
             return { name: `x remove: ${fullName(t)}`, value: `remove:${id}`, description: t.description ?? undefined };
@@ -1277,6 +1277,7 @@ async function main() {
   }
   const cfg = readConfig(file);
   if (!cfg.hasPresetsLine) writeConfig(cfg, {}, { backup: false, presets: DEFAULT_PRESETS }); // first start with this version: the default named buffs
+  else { const moved = migratePresets(cfg.presets); if (moved) writeConfig(cfg, {}, { backup: false, presets: moved }); }
   if (cmd === 'show') return cmdShow(cfg);
   if (cmd === 'set') return cmdSet(cfg, opts);
   if (cmd === 'mod') return cmdMod(cfg, opts);

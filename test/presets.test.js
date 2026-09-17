@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DEFAULT_PRESETS, parsePresets, formatPresets, presetActive, presetChange, presetFromCurrent, validPresetName } from '../src/presets.js';
+import { DEFAULT_PRESETS, migratePresets, parsePresets, formatPresets, presetActive, presetChange, presetFromCurrent, validPresetName } from '../src/presets.js';
 import { readConfig, writeConfig } from '../src/config.js';
 
 const SAMPLE = ['wukongSpeed = 1', 'manaRegen = 0', 'defenseMultiplier = 1', 'addTalents = 901012', 'keeperSoaks = 0', ''].join('\r\n');
@@ -30,7 +30,7 @@ test('presets round-trip through the config line', () => {
 test('a preset is on when all of its parts are in effect; toggling writes the right lines', () => {
   const file = tmpConfig();
   const cfg = readConfig(file);
-  const stinger = DEFAULT_PRESETS.find((p) => p.name === 'Stinger');
+  const stinger = DEFAULT_PRESETS.find((p) => p.name === 'Self Stinger');
   const speed = DEFAULT_PRESETS.find((p) => p.name === 'Movement Speed 2x');
   assert.equal(presetActive(stinger, cfg), false);
   assert.equal(presetActive(speed, cfg), false);
@@ -58,4 +58,16 @@ test('presets line round-trips through writeConfig and a preset can be built fro
   assert.deepEqual(cfg.presets, DEFAULT_PRESETS);
   const mine = presetFromCurrent('Mine', cfg);
   assert.deepEqual(mine, { name: 'Mine', talents: [901012], soaks: [], buffs: [], values: { wukongSpeed: ['2', '1'] }, key: 'None' });
+});
+
+test('Heavy Sting is written as "990001@sting"; an old default "Stinger" is renamed and Heavy Sting added', () => {
+  const sting = DEFAULT_PRESETS.find((p) => p.name === 'Heavy Sting');
+  assert.match(formatPresets([sting]), /^Heavy Sting\{buffs=990001@sting;desc=/);
+  assert.deepEqual(parsePresets(formatPresets([sting]))[0].buffs, [990001]);
+  const old = parsePresets('Mana Regen{values=manaRegen:4:0};Stinger{talents=105013,901411;buffs=92313@heavy;key=F8}');
+  const moved = migratePresets(old);
+  assert.deepEqual(moved.map((p) => p.name), ['Mana Regen', 'Self Stinger', 'Heavy Sting']);
+  assert.equal(moved[1].key, 'F8');
+  assert.equal(migratePresets(moved), null);
+  assert.equal(migratePresets(parsePresets('Stinger{talents=105013}')), null); // the user's own "Stinger" is left alone
 });

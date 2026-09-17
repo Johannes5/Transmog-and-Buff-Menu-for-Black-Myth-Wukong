@@ -75,6 +75,7 @@ namespace TransmogKeeper
         private readonly List<int> _soaks = new List<int>();                 // keeperSoaks: soaks applied on gourd drinks
         private readonly List<int> _keptBuffs = new List<int>();             // keeperBuffs: buff IDs re-added whenever missing
         private readonly List<int> _heavyBuffs = new List<int>();            // keeperBuffs "id@heavy": added when a 3+ point Focus spend is seen
+        private readonly List<int> _stingBuffs = new List<int>();            // keeperBuffs "id@sting": a 3+ point heavy attack's hit poisons the enemy (the ID is only a name)
         private readonly Dictionary<int, DateTime> _keptBuffNext = new Dictionary<int, DateTime>();
         private APawn _pawnRef;                                               // the player pawn seen by the last Tick
         private float _focusPrev = -1f;                                       // Focus gauge value at the last fast poll
@@ -112,6 +113,8 @@ namespace TransmogKeeper
             Log("Stopped.");
         }
 
+        private bool FastPoll => _heavyBuffs.Count > 0 || _stingBuffs.Count > 0;
+
         private async Task Loop(CancellationToken token)
         {
             const int fastMs = 100; // the Focus poll needs to catch a heavy attack's spend before its hit lands
@@ -124,13 +127,13 @@ namespace TransmogKeeper
                     try { Utils.TryRunOnGameThread(Tick); }
                     catch (Exception e) { Log("loop error: " + e.Message); }
                 }
-                else if (_heavyBuffs.Count > 0 && _pawnRef != null)
+                else if (FastPoll && _pawnRef != null)
                 {
                     try { Utils.TryRunOnGameThread(PollFocus); }
                     catch (Exception e) { LogOnce("poll error: " + e.Message); }
                 }
-                try { await Task.Delay(_heavyBuffs.Count > 0 ? fastMs : TickMs, token); } catch (TaskCanceledException) { }
-                elapsed += _heavyBuffs.Count > 0 ? fastMs : TickMs;
+                try { await Task.Delay(FastPoll ? fastMs : TickMs, token); } catch (TaskCanceledException) { }
+                elapsed += FastPoll ? fastMs : TickMs;
             }
         }
 
@@ -165,6 +168,7 @@ namespace TransmogKeeper
                 Stage("talents", () => KeepTalents(pawn, name));
                 Stage("soaks", () => KeepSoaks(pawn, name));
                 Stage("buffs", () => KeepBuffs(pawn, name));
+                Stage("sting", () => KeepSting(pawn));
                 Stage("values", () => KeepValues(pawn, name));
                 Stage("resume", () => ResumeTrueWukong(pawn));
                 Stage("snapshot", () => WriteAttrSnapshot(pawn));
@@ -481,8 +485,8 @@ namespace TransmogKeeper
         }
         private readonly HashSet<int> _keptLogged = new HashSet<int>();
 
-        /** "92313,92200@heavy" -> plain kept buffs and "@heavy" buffs (added on a 3+ point Focus spend). */
-        private static void ParseBuffTokens(string value, List<int> kept, List<int> heavy)
+        /** "92313,92200@heavy,99001@sting" -> plain kept buffs, "@heavy" buffs (added on a 3+ point Focus spend) and "@sting" markers. */
+        private static void ParseBuffTokens(string value, List<int> kept, List<int> heavy, List<int> sting)
         {
             foreach (string raw in (value ?? "").Split(','))
             {
@@ -494,6 +498,7 @@ namespace TransmogKeeper
                 int id;
                 if (!int.TryParse(part, out id) || id <= 0) continue;
                 if (mode == "heavy") { if (!heavy.Contains(id)) heavy.Add(id); }
+                else if (mode == "sting") { if (!sting.Contains(id)) sting.Add(id); }
                 else if (!kept.Contains(id)) kept.Add(id);
             }
         }
@@ -506,16 +511,61 @@ namespace TransmogKeeper
             try
             {
                 var pawn = _pawnRef;
-                if (pawn == null || _heavyBuffs.Count == 0) return;
+                if (pawn == null || !FastPoll) return;
                 float cur = Get(pawn, Focus);
                 float prev = _focusPrev;
                 _focusPrev = cur;
                 if (prev < 0f) return;
                 if (prev - cur < 290f) return; // less than 3 points spent (light attacks, decay, a 1- or 2-point heavy)
+                if (_stingBuffs.Count > 0) { _stingUntil = DateTime.UtcNow.AddSeconds(StingWindowSeconds); _stung.Clear(); }
+                if (_heavyBuffs.Count == 0) { Log($"Heavy attack with {Math.Round(prev / 100f, 1)} Focus points: its hit poisons the enemy"); return; }
                 foreach (int id in _heavyBuffs) BGUFunctionLibraryCS.BGUAddBuff(pawn, pawn, id, (EBuffSourceType)40, 0f);
                 Log($"Heavy attack with {Math.Round(prev / 100f, 1)} Focus points: buff {string.Join(",", _heavyBuffs)} added");
             }
             catch (Exception e) { LogOnce("focus poll error: " + e.Message); }
+        }
+
+        // ---------- Heavy Sting (keeperBuffs "id@sting") ----------
+        // The Spider Celestial Staff effect without its condition (being Poisoned yourself): for a short
+        // while after a 3+ point Focus spend, the first hit on each enemy fills its poison build-up through
+        // the game's own Evt_HandleAbnormal (immunities are checked there). Hits are seen through the
+        // world's Evt_ReportSkillDamageInfo, which BUS_BeAttackedComp raises for every damage dealt.
+
+        private const double StingWindowSeconds = 2.5; // Focus spend -> the heavy attack's hit(s)
+        private const int StingPoisonLevel = 2;
+        private DateTime _stingUntil = DateTime.MinValue;
+        private readonly HashSet<AActor> _stung = new HashSet<AActor>();
+        private BGW_EventCollection.Del_ReportSkillDamageInfo _damageHandler;
+
+        /** Once a second: (re-)add the damage handler; a new level brings a new world event collection. */
+        private void KeepSting(APawn pawn)
+        {
+            if (_stingBuffs.Count == 0) return;
+            var world = BGW_EventCollection.Get(pawn);
+            if (world == null) return;
+            if (_damageHandler == null) _damageHandler = new BGW_EventCollection.Del_ReportSkillDamageInfo(OnSkillDamage);
+            var cur = world.Evt_ReportSkillDamageInfo;
+            if (cur != null && cur.GetInvocationList().Any(d => d.Method == _damageHandler.Method && ReferenceEquals(d.Target, this))) return;
+            world.Evt_ReportSkillDamageInfo = (BGW_EventCollection.Del_ReportSkillDamageInfo)Delegate.Combine(cur, _damageHandler);
+            Log("Heavy Sting: listening for hits");
+        }
+
+        /** Runs on the game thread inside the victim's damage logic. */
+        private void OnSkillDamage(AActor attacker, AActor victim, int skillId, int buffId, int effectId, float damage)
+        {
+            try
+            {
+                if (_stingBuffs.Count == 0 || DateTime.UtcNow > _stingUntil) return;
+                var pawn = _pawnRef;
+                if (pawn == null || victim == null || attacker != pawn || victim == pawn) return;
+                if (buffId != 0 || damage <= 0f) return; // damage over time, blocked hits
+                if (!_stung.Add(victim)) return;
+                var coll = BUS_EventCollectionCS.Get(victim);
+                if (coll == null) return;
+                coll.Evt_HandleAbnormal.Invoke(EAbnormalStateType.Abnormal_Poison, pawn, EAccAbnormalValueType.IncreaseByINV10000, 10000f, StingPoisonLevel);
+                Log($"Heavy Sting: poison build-up filled on {victim.GetName()} (skill {skillId})");
+            }
+            catch (Exception e) { LogOnce("sting error: " + e.Message); }
         }
 
         // ---------- numeric values: regen, speed, attribute overrides ----------
@@ -896,6 +946,7 @@ namespace TransmogKeeper
             _soakNext.Clear();
             _keptBuffs.Clear();
             _heavyBuffs.Clear();
+            _stingBuffs.Clear();
             _keptBuffNext.Clear();
             _presets.Clear();
             _lastPawn = "";       // force a re-check of the look
@@ -921,7 +972,7 @@ namespace TransmogKeeper
                     else if (key == "keeperOutfits") ParseOutfits(value);
                     else if (key == "keeperPresets") ParsePresets(value);
                     else if (key == "keeperSoaks") ParseIds(value, _soaks);
-                    else if (key == "keeperBuffs") ParseBuffTokens(value, _keptBuffs, _heavyBuffs);
+                    else if (key == "keeperBuffs") ParseBuffTokens(value, _keptBuffs, _heavyBuffs, _stingBuffs);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
                     else
                     {
