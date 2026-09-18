@@ -111,7 +111,7 @@ const PUBLIC_LOOKS = 'Gold Serpent=15003,10501,10342,10823,10824,18008;red=15003
 const { DEFAULT_PRESETS, formatPresets } = await import('../src/presets.js');
 for (const [key, val, comment] of [
   ['keeperOutfits', PUBLIC_LOOKS, 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)'],
-  ['keeperOutfitKey', 'F7', 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off)'],
+  ['keeperOutfitKey', 'F7', 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off); Shift + it shows the real gear'],
   ['keeperPresets', formatPresets(DEFAULT_PRESETS), 'named buffs: Name{talents=ids;soaks=ids;values=key:on:off;key=F8} (see wukong-transmog presets)'],
 ]) {
   const line = new RegExp(`^${key} = .*$`, 'm');

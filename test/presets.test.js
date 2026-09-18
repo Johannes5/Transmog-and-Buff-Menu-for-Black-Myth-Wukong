@@ -71,3 +71,15 @@ test('Heavy Sting is written as "990001@sting"; an old default "Stinger" is rena
   assert.equal(migratePresets(moved), null);
   assert.equal(migratePresets(parsePresets('Stinger{talents=105013}')), null); // the user's own "Stinger" is left alone
 });
+
+test('a preset attached to gear keeps every upgrade tier of that piece', async () => {
+  const { allTierIds, catalog } = await import('../src/data.js');
+  const armor = catalog().find((i) => i.setKey && !i.tier);
+  const tiers = allTierIds(armor.id);
+  assert.ok(tiers.includes(armor.id));
+  assert.ok(tiers.every((id) => id % 10 === armor.id % 10)); // same slot
+  assert.deepEqual(allTierIds(15013), [15013]); // weapons keep their ID
+  const list = [{ name: 'Sting', talents: [], soaks: [], buffs: [990001], values: {}, key: 'None', gear: [15013] }];
+  assert.match(formatPresets(list), /gear=15013/);
+  assert.deepEqual(parsePresets(formatPresets(list)), list);
+});

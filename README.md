@@ -40,7 +40,7 @@ Command line equivalents: `wukong-transmog show | list | set | outfits | buffs |
 
 ## Named buffs
 
-A named buff bundles any number of buffs, soaks and value changes under one name, so "Self Stinger" or "Defence +40%" is one entry you switch on or off. The Buffs screen lists them first. "+ save the active buffs as a named buff" turns whatever is active right now into one; each named buff can get an **in-game key** that toggles it while you play (for example F8), and can be renamed, updated or deleted. A few come with the tool: Movement Speed 2x, Defence +40%, Defence +20%, Mana Regen, Self Stinger (heavy attacks poison the enemy and you) and Heavy Sting (a modified Spider Celestial Staff effect: heavy attacks that spend 3+ Focus points poison the enemy, whether or not you are poisoned).
+A named buff bundles any number of buffs, soaks and value changes under one name, so "Self Stinger" or "Defence +40%" is one entry you switch on or off. The Buffs screen lists them first. "+ save the active buffs as a named buff" turns whatever is active right now into one; each named buff can get an **in-game key** that toggles it while you play (for example F8), and can be renamed, updated or deleted. A named buff can also be **attached to a piece of your real gear** ("Attached to" in its menu, or `presets gear "Heavy Sting" spider celestial staff`): while you play it is then on exactly while that piece is equipped, whatever look you wear over it, and off otherwise. A few come with the tool: Movement Speed 2x, Defence +40%, Defence +20%, Mana Regen, Self Stinger (heavy attacks poison the enemy and you) and Heavy Sting (a modified Spider Celestial Staff effect: heavy attacks that spend 3+ Focus points poison the enemy, whether or not you are poisoned).
 
 ## Only looks you have unlocked
 
@@ -48,7 +48,7 @@ The Transmog screen has a "Show" switch: every look the game has, or only the on
 
 ## Saved looks and the in-game key
 
-Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, then your real gear (no transmog), then the first look again. The tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
+Under Transmog > Saved looks you can save the current look under a name, put a saved look on, and change the **in-game key** (`F7` by default; for example `Ctrl+F7` or `none`). Pressing that key while playing puts on the next saved look, in the order shown in the menu, then your real gear (no transmog), then the first look again. **Shift + that key** (`Shift+F7`) shows your real gear right away; pressing it again puts the look you had on back. The tool shows which one you are wearing. A slot that one look changes and the next one leaves alone keeps the previous look until the next respawn.
 
 ## Notes
 

@@ -19,7 +19,8 @@
 //   keeperOutfits         keeper-only: saved looks "Name=id,id;Name=id,id"
 //   keeperOutfitKey       keeper-only: key ("F7", "Ctrl+F7", "None") that puts on the next saved
 //                         look in game; the chosen look is written back into staffTransmog /
-//                         spearTransmog so the tool and the game agree
+//                         spearTransmog so the tool and the game agree. Shift + that key shows
+//                         the real gear (no transmog); again, the look worn before
 //
 // Diagnostics: every change of the game's shown-equipment state is logged. If a file
 // named TransmogKeeperDebug.txt exists next to the log, buff-list changes are logged too.
@@ -83,6 +84,9 @@ namespace TransmogKeeper
         private const double SoakRetrySeconds = 5;                            // re-trigger an instant/expired soak effect this often
         private string _hotkeyText = "F7"; // default when keeperOutfitKey is missing
         private CSharpModBase.Input.HotKeyItem _hotkey;
+        private CSharpModBase.Input.HotKeyItem _realGearKey; // Shift + the outfit key
+        private bool _shiftIsRealGear;
+        private List<int> _lookBeforeRealGear;
         private DateTime _configStamp = DateTime.MinValue;
         private string _lastPawn = "";
         private string _lastTalentPawn = "";
@@ -164,6 +168,7 @@ namespace TransmogKeeper
 
                 // Each stage is isolated: a failure in one (e.g. a game update renaming a type used
                 // by the talent code) must not stop the others, and the look comes first.
+                Stage("gear", () => KeepGearPresets(pawn)); // first: it may rewrite and reload the config
                 Stage("look", () => KeepLook(pawn, name, data));
                 Stage("talents", () => KeepTalents(pawn, name));
                 Stage("soaks", () => KeepSoaks(pawn, name));
@@ -949,6 +954,7 @@ namespace TransmogKeeper
             _stingBuffs.Clear();
             _keptBuffNext.Clear();
             _presets.Clear();
+            _gearApplied.Clear(); // the tool may have switched a gear preset: check again
             _lastPawn = "";       // force a re-check of the look
             _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
             _lastSpeedPawn = "";  // re-apply speed
@@ -1002,7 +1008,7 @@ namespace TransmogKeeper
         }
 
         // ---------- named buffs (presets) and their in-game keys ----------
-        // keeperPresets = Name{talents=ids;soaks=ids;values=key:on:off,...;key=F8};Name2{...}
+        // keeperPresets = Name{talents=ids;soaks=ids;values=key:on:off,...;key=F8;gear=equipId};Name2{...}
         // A key press toggles the whole bundle: on = add its talents and soaks and set its values to "on";
         // off = remove them and set its values to "off". The config is rewritten, so the tool sees it too.
 
@@ -1014,6 +1020,7 @@ namespace TransmogKeeper
             public readonly List<string> Buffs = new List<string>();          // tokens "id" or "id@heavy", as in keeperBuffs
             public readonly List<(string key, string on, string off)> Values = new List<(string, string, string)>();
             public string Key = "None";
+            public readonly List<int> Gear = new List<int>();                 // "gear=id": on only while one of these is really equipped
         }
         private readonly List<Preset> _presets = new List<Preset>();
         private readonly Dictionary<string, (CSharpModBase.Input.HotKeyItem item, string key)> _presetKeys = new Dictionary<string, (CSharpModBase.Input.HotKeyItem, string)>();
@@ -1034,6 +1041,7 @@ namespace TransmogKeeper
                     else if (k == "soaks") ParseIds(v, p.Soaks);
                     else if (k == "buffs") foreach (string tok in v.Split(',')) { string s = tok.Trim(); if (s.Length > 0 && !p.Buffs.Contains(s)) p.Buffs.Add(s); }
                     else if (k == "key") p.Key = v.Length == 0 ? "None" : v;
+                    else if (k == "gear") ParseIds(v, p.Gear);
                     else if (k == "values")
                         foreach (string triple in v.Split(','))
                         {
@@ -1090,30 +1098,67 @@ namespace TransmogKeeper
             {
                 var p = _presets.FirstOrDefault(x => x.Name == name);
                 if (p == null) return;
-                var lines = File.ReadAllLines(ConfigPath).ToList();
-                Func<string, string> get = k => { var l = lines.FirstOrDefault(x => x.StartsWith(k + " =")); return l == null ? "" : l.Substring(l.IndexOf('=') + 1).Trim(); };
-                Action<string, string> set = (k, v) => { int i = lines.FindIndex(x => x.StartsWith(k + " =")); if (i >= 0) lines[i] = $"{k} = {v}"; else lines.Add($"{k} = {v}"); };
-                var talents = new List<int>(); ParseIds(get("addTalents"), talents);
-                var soaks = new List<int>(); ParseIds(get("keeperSoaks"), soaks);
-                var kept = get("keeperBuffs").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0 && s != "0").ToList();
-                Func<string, string> idOf = tok => tok.Split('@')[0].Trim();
-                bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains) && p.Buffs.All(b => kept.Any(k => idOf(k) == idOf(b)))
-                    && p.Values.All(v => { float cur, want; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.on, NumberStyles.Float, CultureInfo.InvariantCulture, out want) && Math.Abs(cur - want) < 1e-4f; });
-                bool turnOn = !on;
-                foreach (int id in p.Talents) { if (turnOn) { if (!talents.Contains(id)) talents.Add(id); } else talents.Remove(id); }
-                foreach (int id in p.Soaks) { if (turnOn) { if (!soaks.Contains(id)) soaks.Add(id); } else soaks.Remove(id); }
-                foreach (string b in p.Buffs) { kept.RemoveAll(k => idOf(k) == idOf(b)); if (turnOn) kept.Add(b); }
-                foreach (var v in p.Values) set(v.key, turnOn ? v.on : v.off);
-                if (p.Talents.Count > 0) set("addTalents", talents.Count == 0 ? "0" : string.Join(",", talents));
-                if (p.Soaks.Count > 0) set("keeperSoaks", soaks.Count == 0 ? "0" : string.Join(",", soaks));
-                if (p.Buffs.Count > 0) set("keeperBuffs", kept.Count == 0 ? "0" : string.Join(",", kept));
-                File.WriteAllLines(ConfigPath, lines);
-                Log($"Preset '{name}' switched {(turnOn ? "ON" : "OFF")} by key");
-                LoadConfig();
-                if (FullMode()) Stage("reload", ReloadTrueWukong);
-                Utils.TryRunOnGameThread(Tick);
+                if (p.Gear.Count > 0) { Log($"Preset '{name}' follows gear {string.Join(",", p.Gear)}; key ignored"); return; }
+                if (SwitchPreset(p, null, "by key")) Utils.TryRunOnGameThread(Tick);
             }
             catch (Exception e) { Log("preset toggle error: " + e.Message); }
+        }
+
+        // ---------- named buffs attached to gear ("gear=id") ----------
+        // Such a preset is on exactly while one of its gear IDs is in the player's real equipment (role
+        // data, not the transmog look). Checked every Tick; the config is only touched on a change.
+
+        private readonly Dictionary<string, bool> _gearApplied = new Dictionary<string, bool>();
+
+        private void KeepGearPresets(APawn pawn)
+        {
+            if (!_presets.Any(p => p.Gear.Count > 0)) return;
+            var wear = RoleDataOf(pawn)?.Actor?.Wear?.EquipList;
+            if (wear == null) return;
+            var worn = new HashSet<int>();
+            foreach (var w in wear) if (w != null && w.Id > 0) worn.Add(w.Id);
+            if (worn.Count == 0) return; // role data not filled yet
+            foreach (var p in _presets.Where(x => x.Gear.Count > 0).ToList()) // SwitchPreset reloads _presets
+            {
+                bool want = p.Gear.Any(worn.Contains);
+                bool applied;
+                if (_gearApplied.TryGetValue(p.Name, out applied) && applied == want) continue;
+                SwitchPreset(p, want, want ? $"gear {string.Join(",", p.Gear.Where(worn.Contains))} equipped" : "its gear is not equipped");
+                _gearApplied[p.Name] = want;
+            }
+        }
+
+        /** Switches a preset on/off (null = toggle) in the config and reloads it; false when it already was in that state. */
+        private bool SwitchPreset(Preset p, bool? want, string why)
+        {
+            string name = p.Name;
+            var lines = File.ReadAllLines(ConfigPath).ToList();
+            Func<string, string> get = k => { var l = lines.FirstOrDefault(x => x.StartsWith(k + " =")); return l == null ? "" : l.Substring(l.IndexOf('=') + 1).Trim(); };
+            Action<string, string> set = (k, v) => { int i = lines.FindIndex(x => x.StartsWith(k + " =")); if (i >= 0) lines[i] = $"{k} = {v}"; else lines.Add($"{k} = {v}"); };
+            var talents = new List<int>(); ParseIds(get("addTalents"), talents);
+            var soaks = new List<int>(); ParseIds(get("keeperSoaks"), soaks);
+            var kept = get("keeperBuffs").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0 && s != "0").ToList();
+            Func<string, string> idOf = tok => tok.Split('@')[0].Trim();
+            bool on = p.Talents.All(talents.Contains) && p.Soaks.All(soaks.Contains) && p.Buffs.All(b => kept.Any(k => idOf(k) == idOf(b)))
+                && p.Values.All(v => { float cur, target; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.on, NumberStyles.Float, CultureInfo.InvariantCulture, out target) && Math.Abs(cur - target) < 1e-4f; });
+            bool turnOn = want ?? !on;
+            if (turnOn && on) return false;
+            // switching off also clears a preset that is only partly on
+            bool partly = p.Talents.Any(talents.Contains) || p.Soaks.Any(soaks.Contains) || p.Buffs.Any(b => kept.Any(k => idOf(k) == idOf(b)))
+                || p.Values.Any(v => { float cur, off; return float.TryParse(get(v.key), NumberStyles.Float, CultureInfo.InvariantCulture, out cur) && float.TryParse(v.off, NumberStyles.Float, CultureInfo.InvariantCulture, out off) && Math.Abs(cur - off) >= 1e-4f; });
+            if (!turnOn && !partly) return false;
+            foreach (int id in p.Talents) { if (turnOn) { if (!talents.Contains(id)) talents.Add(id); } else talents.Remove(id); }
+            foreach (int id in p.Soaks) { if (turnOn) { if (!soaks.Contains(id)) soaks.Add(id); } else soaks.Remove(id); }
+            foreach (string b in p.Buffs) { kept.RemoveAll(k => idOf(k) == idOf(b)); if (turnOn) kept.Add(b); }
+            foreach (var v in p.Values) set(v.key, turnOn ? v.on : v.off);
+            if (p.Talents.Count > 0) set("addTalents", talents.Count == 0 ? "0" : string.Join(",", talents));
+            if (p.Soaks.Count > 0) set("keeperSoaks", soaks.Count == 0 ? "0" : string.Join(",", soaks));
+            if (p.Buffs.Count > 0) set("keeperBuffs", kept.Count == 0 ? "0" : string.Join(",", kept));
+            File.WriteAllLines(ConfigPath, lines);
+            Log($"Preset '{name}' switched {(turnOn ? "ON" : "OFF")} ({why})");
+            LoadConfig();
+            if (FullMode()) Stage("reload", ReloadTrueWukong);
+            return true;
         }
 
         // ---------- saved looks and the in-game key ----------
@@ -1174,8 +1219,29 @@ namespace TransmogKeeper
                 if (_hotkey != null) { _hotkey.Label = "TransmogKeeper: next saved look"; _hotkey.RunOnGameThread = true; }
             }
             else _hotkey.WithKey(mods, key);
+            // Shift + the same key shows the real gear; not bound when the outfit key itself uses Shift
+            _shiftIsRealGear = key != CSharpModBase.Input.Key.None && (mods & CSharpModBase.Input.ModifierKeys.Shift) == 0;
+            var realKey = _shiftIsRealGear ? key : CSharpModBase.Input.Key.None;
+            var realMods = _shiftIsRealGear ? mods | CSharpModBase.Input.ModifierKeys.Shift : CSharpModBase.Input.ModifierKeys.None;
+            if (_realGearKey == null)
+            {
+                if (_shiftIsRealGear)
+                {
+                    _realGearKey = Utils.RegisterKeyBind(realMods, realKey, ToggleRealGear);
+                    if (_realGearKey != null) { _realGearKey.Label = "TransmogKeeper: real gear"; _realGearKey.RunOnGameThread = true; }
+                }
+            }
+            else _realGearKey.WithKey(realMods, realKey);
             _boundHotkey = _hotkeyText;
-            Log(key == CSharpModBase.Input.Key.None ? "Outfit key disabled" : $"Outfit key bound: {_hotkeyText}");
+            Log(key == CSharpModBase.Input.Key.None ? "Outfit key disabled" : $"Outfit key bound: {_hotkeyText}{(_shiftIsRealGear ? $" (Shift+{_hotkeyText} = real gear)" : "")}");
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        private static bool ShiftDown()
+        {
+            try { return (GetAsyncKeyState(0x10) & 0x8000) != 0; } catch { return false; }
         }
 
         /** Puts on the saved look after the one currently worn (wraps around) and records it in the config. */
@@ -1183,30 +1249,60 @@ namespace TransmogKeeper
         {
             try
             {
+                // in case the loader also fires the plain key while Shift is held: that press belongs to ToggleRealGear
+                if (_shiftIsRealGear && _realGearKey != null && ShiftDown()) return;
                 if (_outfits.Count == 0) { Log("Outfit key pressed but no saved looks (keeperOutfits is empty)"); return; }
                 // the cycle is: every saved look, then "real gear" (no transmog) unless a saved look already is that
                 var cycle = new List<(string name, List<int> ids)>(_outfits);
                 if (!cycle.Any(o => o.ids.Count == 0)) cycle.Add(("real gear", new List<int>()));
                 int cur = cycle.FindIndex(o => o.ids.SequenceEqual(_ids));
                 var next = cycle[(cur + 1) % cycle.Count];
-                string line = next.ids.Count == 0 ? "0" : string.Join(",", next.ids);
-                var lines = File.ReadAllLines(ConfigPath).ToList();
-                foreach (string k in new[] { "staffTransmog", "spearTransmog" })
-                {
-                    int idx = lines.FindIndex(l => l.StartsWith(k + " ="));
-                    if (idx >= 0) lines[idx] = $"{k} = {line}";
-                    else lines.Add($"{k} = {line}");
-                }
-                File.WriteAllLines(ConfigPath, lines);
-                Log($"Outfit key: switching to \"{next.name}\" ({line})");
-                LoadConfig();               // picks up the new list, forces a re-check of the look
-                _lastApply = DateTime.MinValue;
-                Utils.TryRunOnGameThread(Tick);
+                WearLook(next.name, next.ids);
             }
             catch (Exception e)
             {
                 Log("outfit switch error: " + e.Message);
             }
+        }
+
+        /** Shift + outfit key: real gear (no transmog); pressed again while on real gear, back to the look worn before. */
+        private void ToggleRealGear()
+        {
+            try
+            {
+                if (_ids.Count > 0)
+                {
+                    _lookBeforeRealGear = new List<int>(_ids);
+                    WearLook("real gear", new List<int>());
+                }
+                else if (_lookBeforeRealGear != null && _lookBeforeRealGear.Count > 0)
+                {
+                    var saved = _outfits.FirstOrDefault(o => o.ids.SequenceEqual(_lookBeforeRealGear));
+                    WearLook(saved.name ?? "previous look", _lookBeforeRealGear);
+                }
+                else Log("Real-gear key: already on real gear");
+            }
+            catch (Exception e)
+            {
+                Log("outfit switch error: " + e.Message);
+            }
+        }
+
+        private void WearLook(string name, List<int> ids)
+        {
+            string line = ids.Count == 0 ? "0" : string.Join(",", ids);
+            var lines = File.ReadAllLines(ConfigPath).ToList();
+            foreach (string k in new[] { "staffTransmog", "spearTransmog" })
+            {
+                int idx = lines.FindIndex(l => l.StartsWith(k + " ="));
+                if (idx >= 0) lines[idx] = $"{k} = {line}";
+                else lines.Add($"{k} = {line}");
+            }
+            File.WriteAllLines(ConfigPath, lines);
+            Log($"Outfit key: switching to \"{name}\" ({line})");
+            LoadConfig();               // picks up the new list, forces a re-check of the look
+            _lastApply = DateTime.MinValue;
+            Utils.TryRunOnGameThread(Tick);
         }
 
         private static void ParseIds(string value, List<int> target)

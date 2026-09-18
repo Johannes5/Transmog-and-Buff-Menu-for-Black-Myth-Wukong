@@ -281,6 +281,13 @@ export function itemById(id) {
   return { id, slot, name: `Unknown item ${id}`, note: '' };
 }
 
+/** The IDs one piece of gear can have in the save: armor changes its ID with every upgrade tier. */
+export function allTierIds(id) {
+  const item = byId.get(id);
+  if (!item?.setKey) return [id];
+  return catalog({ allTiers: true }).filter((i) => i.setKey === item.setKey && i.slot === item.slot).map((i) => i.id);
+}
+
 /** Which slot an ID belongs to (used to decode config lines). */
 export function slotOf(id) {
   return itemById(id).slot;

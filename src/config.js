@@ -170,7 +170,7 @@ export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs
   if (recentValues) setLine(RECENT_VALUES_KEY, formatRecentValues(recentValues.slice(0, RECENT_KEPT)), 'Transmog & Buff Tool only: values reset lately (the menu offers to reactivate them)');
   if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');
   if (saved) setLine(OUTFITS_KEY, formatOutfits(saved), 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)');
-  if (hotkey) setLine(HOTKEY_KEY, hotkey, 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off)');
+  if (hotkey) setLine(HOTKEY_KEY, hotkey, 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off); Shift + it shows the real gear');
   if (backup) backupConfig(cfg.file);
   fs.writeFileSync(cfg.file, lines.join(fresh.eol), 'utf8');
   Object.assign(cfg, readConfig(cfg.file));

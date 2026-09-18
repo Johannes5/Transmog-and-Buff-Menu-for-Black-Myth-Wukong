@@ -6,6 +6,8 @@
 //   talents  addTalents IDs        soaks  keeperSoaks IDs        buffs  keeperBuffs IDs
 //   values   key:on:off triples   (on = the value while the preset is active, off = what "off" restores)
 //   key      in-game toggle key or None
+//   gear     equipment IDs (one piece, every quality tier): the keeper keeps the preset on exactly while one of
+//            them is really equipped (not the transmog look), and off otherwise
 import { VALUES, valueByKey, isDefault } from './values.js';
 import { configNumber, formatBuffs } from './config.js';
 
@@ -57,6 +59,7 @@ export function parsePresets(text) {
       else if (k === 'soaks') p.soaks = ids(v);
       else if (k === 'buffs') p.buffs = ids(v.replace(/@[a-z]+/gi, ''));
       else if (k === 'key') p.key = v || 'None';
+      else if (k === 'gear') { if (ids(v).length) p.gear = ids(v); }
       else if (k === 'desc') { if (v) p.desc = v; }
       else if (k === 'values') {
         for (const triple of v.split(',')) {
@@ -81,6 +84,7 @@ export function formatPresets(list) {
     const vals = Object.entries(p.values).map(([k, [on, off]]) => `${k}:${on}:${off}`);
     if (vals.length) parts.push(`values=${vals.join(',')}`);
     if (p.key && p.key !== 'None') parts.push(`key=${p.key}`);
+    if (p.gear?.length) parts.push(`gear=${p.gear.join(',')}`);
     if (p.desc) parts.push(`desc=${cleanDesc(p.desc)}`);
     return `${p.name}{${parts.join(';')}}`;
   }).join(';');

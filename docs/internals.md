@@ -52,7 +52,10 @@ TrueWukong-KeybindList.txt) is the key
 TransmogKeeper v1.5+ registers through the loader's `Utils.RegisterKeyBind`. Pressing it picks the
 saved look after the one whose IDs equal the current `staffTransmog` (wrapping around), writes it
 into `staffTransmog` / `spearTransmog` itself and applies it at once, so the CLI and the game
-always agree. The key is re-bound when the config changes. The keeper only applies IDs that are
+always agree. Shift + the same key (not bound when the key itself uses Shift) writes `0` = real
+gear; pressed again while on real gear it puts back the look worn before (remembered in memory
+only). In case the loader also fires the plain bind while Shift is held, the plain handler
+returns when `GetAsyncKeyState(VK_SHIFT)` is down. The key is re-bound when the config changes. The keeper only applies IDs that are
 listed, so a slot the new look leaves empty keeps the old look until the game re-spawns the pawn.
 
 ```
@@ -72,6 +75,13 @@ the time the preset was saved). The tool seeds `DEFAULT_PRESETS` when the line i
 v1.7+ registers one loader key bind per preset with a key and toggles the preset by rewriting the config
 lines itself (then LoadConfig, and True Wukong's reload in full mode), so the tool and the game agree.
 Names may not contain `{ } ; = #`.
+
+`gear=id,id` attaches a preset to a piece of real gear (`presets gear <name> <piece|none>`; the tool
+writes every upgrade tier of an armor piece, since its ID changes per tier). Each Tick the keeper reads
+the real equipment from the role data (`RoleCs.Actor.Wear.EquipList`, not `MapEquip`, which shows the
+transmog) and switches the preset on while one of the IDs is worn and off otherwise (off also clears a
+partly-on preset). The config is only read/written when the wanted state changes or the config was
+reloaded; the preset's key is ignored. Nothing happens while the pawn is not Wukong (transformations).
 
 ## Values in full mode
 

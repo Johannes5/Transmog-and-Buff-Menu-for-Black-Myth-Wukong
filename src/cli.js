@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { catalog, sets, setPieces, setPieceNames, itemById, slotOf, matches, SLOTS, SLOT_LABEL } from './data.js';
+import { catalog, sets, setPieces, setPieceNames, itemById, allTierIds, slotOf, matches, SLOTS, SLOT_LABEL } from './data.js';
 import { loadTalentCatalog, talentById, formatTalent, fullName, groupsOf, CATEGORIES } from './talents.js';
 import { VALUES, VALUE_GROUPS, ATTRS, valueByKey, attrByName, formatAttrLine, readAttrSnapshot, LIVE_BARS, fmtNum, isDefault } from './values.js';
 import { hasPayload, installInto, uninstallFrom, findGameDirs, isGameDir, isInstalled, needsUpdate, payloadVersion, gameRunning, gameExeStamp } from './install.js';
@@ -337,11 +337,34 @@ function presetByName(cfg, query) {
   throw new Error(`"${query}" is ambiguous: ${hits.map((p) => p.name).join(', ')}`);
 }
 
+/** A piece of gear from any slot, by name or ID; null for "none". */
+function resolveGear(query) {
+  const q = String(query ?? '').trim();
+  if (!q) throw new Error('Which piece of gear? A name, an ID, or "none".');
+  if (/^(none|off|0|-)$/i.test(q)) return null;
+  if (/^\d+$/.test(q)) return parseInt(q, 10);
+  let hits = catalog().filter((i) => matches(i, q));
+  const exact = hits.filter((i) => i.name.toLowerCase() === q.toLowerCase());
+  if (exact.length === 1) hits = exact;
+  if (hits.length > 1) hits = hits.filter((i) => !i.tier);
+  if (hits.length === 1) return hits[0].id;
+  if (!hits.length) throw new Error(`No gear matches "${q}". Try: wukong-transmog list ${q}`);
+  throw new Error(`"${q}" is ambiguous:\n` + hits.slice(0, 20).map((i) => `  ${i.id}  ${i.name}`).join('\n'));
+}
+
+/** Name of the gear a named buff is attached to ('' = none). */
+const gearName = (p) => (p.gear?.length ? itemById(p.gear[0]).name.replace(/ \((tier \d|Mythical).*\)$/, '') : '');
+
+function attachGear(p, id) {
+  if (id === null) delete p.gear;
+  else p.gear = allTierIds(id);
+}
+
 function describePresets(cfg) {
   if (!cfg.presets.length) return '  (no named buffs)';
   const cat = loadTalentCatalog(cfg.file);
   const nameOf = (id) => fullName(talentById(cat, id));
-  return cfg.presets.map((p) => `  [${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(26)} ${p.key !== 'None' ? ('key ' + p.key).padEnd(12) : ''.padEnd(12)} ${presetText(p, cat, nameOf)}`).join('\n');
+  return cfg.presets.map((p) => `  [${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(26)} ${p.key !== 'None' ? ('key ' + p.key).padEnd(12) : ''.padEnd(12)} ${p.gear ? `[with ${gearName(p)}] ` : ''}${presetText(p, cat, nameOf)}`).join('\n');
 }
 
 function cmdPresets(cfg, opts) {
@@ -350,7 +373,7 @@ function cmdPresets(cfg, opts) {
   if (!sub) {
     console.log('Named buffs ([x] = on):');
     console.log(describePresets(cfg));
-    console.log('\nCommands: presets on <name> | presets off <name> | presets save <name> (from the active buffs) | presets delete <name> | presets key <name> <F8|Ctrl+F8|none>');
+    console.log('\nCommands: presets on <name> | presets off <name> | presets save <name> (from the active buffs) | presets delete <name> | presets key <name> <F8|Ctrl+F8|none> | presets gear <name> <piece of gear|none> (on only while that piece is really equipped)');
     return;
   }
   const backup = !opts['no-backup'];
@@ -376,7 +399,17 @@ function cmdPresets(cfg, opts) {
     p.key = key;
     writeConfig(cfg, {}, { backup, presets: cfg.presets });
     console.log(key === 'None' ? `"${p.name}" has no in-game key.` : `${key} toggles "${p.name}" in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.`);
-  } else throw new Error('usage: wukong-transmog presets [on|off|save|delete <name> | key <name> <key>]');
+  } else if (sub === 'gear') {
+    // the gear is everything after the named buff: try the longest preset name first
+    let p = null, gearQuery = '';
+    for (let n = rest.length - 1; n >= 1 && !p; n--) {
+      try { p = presetByName(cfg, rest.slice(0, n).join(' ')); gearQuery = rest.slice(n).join(' '); } catch { /* shorter name */ }
+    }
+    if (!p) throw new Error('usage: wukong-transmog presets gear <name> <piece of gear|none>');
+    attachGear(p, resolveGear(gearQuery));
+    writeConfig(cfg, {}, { backup, presets: cfg.presets });
+    console.log(p.gear ? `"${p.name}" is now on only while ${gearName(p)} is really equipped${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.` : `"${p.name}" is no longer attached to gear.`);
+  } else throw new Error('usage: wukong-transmog presets [on|off|save|delete <name> | key <name> <key> | gear <name> <piece|none>]');
 }
 
 // ---------- custom values ----------
@@ -772,7 +805,7 @@ async function interactive(cfg, opts) {
         choices: [
           { name: '- back', value: '__back__' },
           { name: `+ save the current look (${outfitSummary(cfg)}) under a name`, value: '__save__' },
-          { name: `In-game key   ${cfg.hotkey}${keeperInstalled(cfg.file) ? '' : '   (needs the keeper, see Doctor)'}`, value: '__key__', description: 'Pressing it in game puts on the next saved look, in the order shown here, then your real gear (no transmog), then the first look again. Examples: F7, Ctrl+F7, NUMPAD1.' },
+          { name: `In-game key   ${cfg.hotkey}${keeperInstalled(cfg.file) ? '' : '   (needs the keeper, see Doctor)'}`, value: '__key__', description: 'Pressing it in game puts on the next saved look, in the order shown here, then your real gear (no transmog), then the first look again. Shift + the key shows your real gear right away (again: back to the look). Examples: F7, Ctrl+F7, NUMPAD1.' },
           ...cfg.saved.map((o) => ({ name: `${o.name.padEnd(24)} ${idsSummary(o.ids)}${o.ids.join(',') === cur ? '   [wearing]' : ''}`, value: o.name, description: describeOutfit(o.ids) })),
         ],
       });
@@ -838,7 +871,7 @@ async function interactive(cfg, opts) {
           { name: '+ add a custom buff (change a value: regen, speed, attack...)', value: '__value__' },
           { name: '+ save the active buffs as a named buff', value: '__preset_save__' },
           ...(cfg.presets.length ? [new Separator('Named buffs (Enter: on/off, key, edit)')] : []),
-          ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: presetText(p, cat, (id) => fullName(talentById(cat, id))) })),
+          ...cfg.presets.map((p) => ({ name: `[${presetActive(p, cfg) ? 'x' : ' '}] ${p.name.padEnd(28)} ${p.gear ? 'with ' + gearName(p) : p.key !== 'None' ? 'key ' + p.key : ''}`, value: `preset:${p.name}`, description: presetText(p, cat, (id) => fullName(talentById(cat, id))) })),
           ...(activeBuffIds(cfg).some((id) => !coveredByActivePresets(cfg).ids.has(id)) || changedValues().some((v) => !coveredByActivePresets(cfg).keys.has(v.key)) || cfg.attrs.length ? [new Separator('Active')] : []),
           ...activeBuffIds(cfg).filter((id) => !coveredByActivePresets(cfg).ids.has(id)).map((id) => {
             const t = talentById(cat, id);
@@ -925,6 +958,7 @@ async function interactive(cfg, opts) {
             { name: '- back', value: '__back__' },
             { name: on ? 'Turn it off' : 'Turn it on', value: 'toggle' },
             { name: `In-game key   ${p.key}`, value: 'key', description: 'Pressing it in game switches this named buff on or off. Examples: F8, Ctrl+F8, NUMPAD1; "none" removes it.' },
+            { name: `Attached to   ${p.gear ? gearName(p) : '(nothing)'}`, value: 'gear', description: 'Attach this named buff to a piece of your real gear: while playing it is on exactly while that piece is equipped (any upgrade tier; the transmog look does not count), and off otherwise. The in-game key is ignored then.' },
             { name: `Description   ${p.desc ? p.desc.slice(0, 60) + (p.desc.length > 60 ? '...' : '') : '(none: the list of parts is shown)'}`, value: 'desc' },
             { name: 'Replace its contents with the active buffs', value: 'update' },
             { name: 'Rename', value: 'rename' },
@@ -947,6 +981,33 @@ async function interactive(cfg, opts) {
           p.key = key;
           writeConfig(cfg, {}, { backup, presets: cfg.presets });
           console.log(key === 'None' ? '  In-game key removed.\n' : `  ${key} toggles "${p.name}" in game${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.\n`);
+          continue;
+        }
+        if (what === 'gear') {
+          // same two steps as Transmog: the slot, then a list of pieces (typing narrows it)
+          const slot = await select({
+            message: `Attach "${p.name}" to which piece of your real gear?`,
+            choices: [
+              { name: '- back', value: '__back__' },
+              ...(p.gear ? [{ name: `- detach from ${gearName(p)}`, value: '__none__' }] : []),
+              ...SLOTS.map((s) => ({ name: SLOT_LABEL[s], value: s })),
+            ],
+          });
+          if (slot === '__back__') continue;
+          if (slot === '__none__') attachGear(p, null);
+          else {
+            const ownedOnly = !!readSettings().ownedOnly;
+            const ownedIds = ownedOnly ? readOwned(cfg.file) : null;
+            const chosen = await pickFrom(
+              `On only while which ${SLOT_LABEL[slot].toLowerCase()} is equipped?${ownedOnly ? ' (only gear you have unlocked; change it under Transmog > Show)' : ''}`,
+              catalog().filter((i) => i.slot === slot && i.setKey !== 'default' && allTierIds(i.id)[0] === i.id && isOwned(i, ownedIds)), // real pieces only, one entry per piece (not per tier)
+              [{ name: '- back', value: '__back__' }],
+            );
+            if (chosen === '__back__') continue;
+            attachGear(p, chosen);
+          }
+          writeConfig(cfg, {}, { backup, presets: cfg.presets });
+          console.log(p.gear ? `  On only while ${gearName(p)} is really equipped${keeperInstalled(cfg.file) ? '' : ' (needs the keeper)'}.\n` : '  Detached.\n');
           continue;
         }
         if (what === 'desc') {
@@ -1148,6 +1209,7 @@ const HELP = `Transmog & Buff Tool ${VERSION}  (wukong-transmog)
       outfits key <F7|Ctrl+F7|none>    in-game key that puts on the next saved look
   wukong-transmog presets              named buffs: bundles of buffs and values with an optional in-game key
       presets on|off|save|delete <name>, presets key <name> <F8|none>
+      presets gear <name> <piece|none>  on only while that piece of real gear is equipped
   wukong-transmog buffs                active buffs (set bonuses, weapon and piece effects, curios, soaks)
       buffs list [words]               browse, grouped by category and armor set
       buffs info <name|id>             what a buff does
