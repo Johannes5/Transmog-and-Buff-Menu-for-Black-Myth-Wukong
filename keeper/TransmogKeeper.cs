@@ -21,6 +21,8 @@
 //                         look in game; the chosen look is written back into staffTransmog /
 //                         spearTransmog so the tool and the game agree. Shift + that key shows
 //                         the real gear (no transmog); again, the look worn before
+//   keeperStanceKey       keeper-only: key ("H", "Ctrl+F6", "None") that switches to the next
+//                         unlocked staff stance (Smash > Pillar > Thrust); missing = off
 //
 // Diagnostics: every change of the game's shown-equipment state is logged. If a file
 // named TransmogKeeperDebug.txt exists next to the log, buff-list changes are logged too.
@@ -44,7 +46,7 @@ namespace TransmogKeeper
     public class TransmogKeeper : ICSharpMod
     {
         public string Name => "TransmogKeeper";
-        public string Version => "1.7.0";
+        public string Version => "1.8.0";
 
         private static readonly string BaseDir = AppDomain.CurrentDomain.BaseDirectory; // b1/Binaries/Win64
         private static readonly string ConfigPath = Path.Combine(BaseDir, "CSharpLoader", "Mods", "TrueWukong", "TrueWukongConfig.txt");
@@ -957,6 +959,7 @@ namespace TransmogKeeper
             _gearApplied.Clear(); // the tool may have switched a gear preset: check again
             _lastPawn = "";       // force a re-check of the look
             _hotkeyText = "F7";   // default; overridden by keeperOutfitKey (None = off)
+            _stanceKeyText = "None";
             _lastSpeedPawn = "";  // re-apply speed
             _talentTries.Clear();
             try
@@ -980,6 +983,7 @@ namespace TransmogKeeper
                     else if (key == "keeperSoaks") ParseIds(value, _soaks);
                     else if (key == "keeperBuffs") ParseBuffTokens(value, _keptBuffs, _heavyBuffs, _stingBuffs);
                     else if (key == "keeperOutfitKey") _hotkeyText = value;
+                    else if (key == "keeperStanceKey") _stanceKeyText = value;
                     else
                     {
                         float f; bool b;
@@ -1003,6 +1007,8 @@ namespace TransmogKeeper
             }
             try { SyncHotkey(); }
             catch (Exception e) { Log("hotkey error: " + e.Message); }
+            try { SyncStanceKey(); }
+            catch (Exception e) { Log("stance key error: " + e.Message); }
             try { SyncPresetKeys(); }
             catch (Exception e) { Log("preset key error: " + e.Message); }
         }
@@ -1234,6 +1240,98 @@ namespace TransmogKeeper
             else _realGearKey.WithKey(realMods, realKey);
             _boundHotkey = _hotkeyText;
             Log(key == CSharpModBase.Input.Key.None ? "Outfit key disabled" : $"Outfit key bound: {_hotkeyText}{(_shiftIsRealGear ? $" (Shift+{_hotkeyText} = real gear)" : "")}");
+        }
+
+        // ---------- stance cycle key ----------
+
+        private string _stanceKeyText = "None";
+        private string _boundStanceKey = "None";
+        private CSharpModBase.Input.HotKeyItem _stanceKey;
+
+        private void SyncStanceKey()
+        {
+            if (_stanceKeyText == _boundStanceKey) return;
+            CSharpModBase.Input.ModifierKeys mods;
+            CSharpModBase.Input.Key key;
+            if (!ParseHotkey(_stanceKeyText, out mods, out key))
+            {
+                Log($"keeperStanceKey '{_stanceKeyText}' is not a key the loader knows (see TrueWukong-KeybindList.txt); key disabled");
+                mods = CSharpModBase.Input.ModifierKeys.None;
+                key = CSharpModBase.Input.Key.None;
+            }
+            if (_stanceKey == null)
+            {
+                if (key == CSharpModBase.Input.Key.None) { _boundStanceKey = _stanceKeyText; return; }
+                _stanceKey = Utils.RegisterKeyBind(mods, key, NextStance);
+                if (_stanceKey != null) { _stanceKey.Label = "TransmogKeeper: next stance"; _stanceKey.RunOnGameThread = true; }
+            }
+            else _stanceKey.WithKey(mods, key);
+            _boundStanceKey = _stanceKeyText;
+            Log(key == CSharpModBase.Input.Key.None ? "Stance key disabled" : $"Stance key bound: {_stanceKeyText}");
+        }
+
+        /** Switches to the next unlocked stance the way the game's own stance keys do (same checks, same event). */
+        private void NextStance()
+        {
+            // the work lives in its own method: if it cannot be JIT-compiled against this game build, the error is logged here
+            try { NextStanceCore(); }
+            catch (Exception e) { Log("stance key failed: " + e.GetType().Name + ": " + e.Message); }
+        }
+
+        /** Static game method by name, found by argument count and assignable types; null when this game build has none. */
+        private static System.Reflection.MethodInfo FindStatic(Type type, string name, params object[] args)
+        {
+            foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static))
+            {
+                if (m.Name != name) continue;
+                var ps = m.GetParameters();
+                if (ps.Length != args.Length) continue;
+                bool ok = true;
+                for (int i = 0; i < ps.Length && ok; i++) ok = ps[i].ParameterType.IsEnum ? args[i] is int : ps[i].ParameterType.IsInstanceOfType(args[i]);
+                if (ok) return m;
+            }
+            return null;
+        }
+
+        private static object CallStatic(Type type, string name, params object[] args)
+        {
+            var m = FindStatic(type, name, args);
+            if (m == null) return null;
+            var ps = m.GetParameters();
+            var converted = args.Select((a, i) => ps[i].ParameterType.IsEnum ? Enum.ToObject(ps[i].ParameterType, a) : a).ToArray();
+            return m.Invoke(null, converted);
+        }
+
+        // Every game call goes through reflection: the signatures differ between game builds (the reference
+        // DLLs had BGUIsCanReceiveBattleInput(AActor), the live game did not, and the whole method failed to load).
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void NextStanceCore()
+        {
+            var pawn = GetControlledPawn();
+            if (pawn == null || !pawn.GetName().Contains("Unit_Player_Wukong")) return; // not while transformed
+            object canInput = CallStatic(typeof(BGUFuncLibInput), "BGUIsCanReceiveBattleInput", pawn);
+            if (canInput is bool && !(bool)canInput) return;
+            var roleCs = RoleDataOf(pawn);
+            if (roleCs == null) { Log("stance key: no role data"); return; }
+            object stance = CallStatic(typeof(RoleDataHelper), "GetStance", roleCs);
+            if (stance == null) { Log("stance key: RoleDataHelper.GetStance not found in this game build"); return; }
+            int current = Convert.ToInt32(stance);
+            for (int step = 1; step <= 2; step++)
+            {
+                int next = (current + step) % 3;
+                if (next != 0) // Smash is always there; Pillar and Thrust need their talent
+                {
+                    object talent = CallStatic(typeof(GameDBRuntime), "GetStanceRequireTalentId", next);
+                    if (talent is int && (int)talent > 0)
+                    {
+                        object has = CallStatic(typeof(RoleDataHelper), "IsTalentExist", roleCs, (int)talent);
+                        if (has is bool && !(bool)has) continue;
+                    }
+                }
+                bool sent = InvokeEvent(BUS_EventCollectionCS.Get(pawn), "Evt_SwitchWeaponPoseByType", next);
+                if (!sent) Log("stance key: Evt_SwitchWeaponPoseByType not found in this game build");
+                return;
+            }
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]

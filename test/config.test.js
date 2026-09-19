@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  readConfig, writeConfig, configNumber, showNumber, parseIds, parseOutfits, formatOutfits, normalizeHotkey, validOutfitName, listBackups, pruneBackups, restoreBackup,
+  readConfig, writeConfig, configNumber, showNumber, parseIds, parseOutfits, formatOutfits, normalizeHotkey, normalizeSingleKey, validOutfitName, listBackups, pruneBackups, restoreBackup,
 } from '../src/config.js';
 
 const SAMPLE = [
@@ -167,4 +167,27 @@ test('every write makes a backup, backups are pruned and can be restored', async
   assert.deepEqual(readConfig(file).outfits.staff, [15034]);
   pruneBackups(file, 5);
   assert.equal(listBackups(file).length, 5);
+});
+
+test('spear grip key: missing line = off, single keys only', () => {
+  const cfg = readConfig(tmpConfig());
+  assert.equal(cfg.gripKey, 'None');
+  assert.equal(normalizeSingleKey('tab'), 'TAB');
+  assert.equal(normalizeSingleKey('none'), 'None');
+  assert.equal(normalizeSingleKey('ctrl+tab'), null);
+  assert.equal(normalizeSingleKey('nokey'), null);
+  writeConfig(cfg, {}, { backup: false, gripKey: 'TAB' });
+  assert.equal(cfg.gripKey, 'TAB');
+  assert.match(fs.readFileSync(cfg.file, 'utf8'), /\r\ngripSwitchKey = TAB\r\n/);
+  writeConfig(cfg, {}, { backup: false, gripKey: 'None' });
+  assert.equal(readConfig(cfg.file).gripKey, 'None');
+});
+
+test('stance cycle key: missing line = off, modifiers allowed', () => {
+  const cfg = readConfig(tmpConfig());
+  assert.equal(cfg.stanceKey, 'None');
+  writeConfig(cfg, {}, { backup: false, stanceKey: 'Ctrl+F6' });
+  assert.equal(cfg.stanceKey, 'Ctrl+F6');
+  assert.match(fs.readFileSync(cfg.file, 'utf8'), /^keeperStanceKey = Ctrl\+F6\r\n/m);
+  assert.equal(cfg.gripKey, 'None'); // the spear grip key is a separate line
 });

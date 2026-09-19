@@ -291,6 +291,79 @@ int applied = 0;
     applied++;
 }
 
+// ---- 11. grip switch on a configurable key instead of hard-coded Tab ----------
+// The mod hard-binds Tab (also with Shift/Ctrl) and a controller chord to GripSwitch, which swaps the
+// staff moveset for the spear one. The Tab registrations are unbound and replaced by the mod's own
+// configurable binding on "gripSwitchKey" (a key name or None; a missing line counts as None):
+//   if (_config.ContainsKey("gripSwitchKey")) AddGlobalKey("gripSwitchKey", GripSwitch);
+// GripSwitch itself gets a guard so the controller chord follows the setting too; going back to staff always works:
+//   if (!spear && !(_config.ContainsKey("gripSwitchKey") && !_config["gripSwitchKey"].ToLower().Contains("none"))) return;
+{
+    const string cfgKey = "gripSwitchKey";
+    var gs = main.Methods.First(m => m.Name == "GripSwitch");
+    var agk = main.Methods.First(m => m.Name == "AddGlobalKey");
+    FieldDefinition config = main.Fields.First(f => f.Name == "_config");
+    MethodReference Callee(string name) => (MethodReference)agk.Body.Instructions.First(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference mr && mr.Name == name).Operand;
+    var getItem = Callee("get_Item");
+    var toLower = Callee("ToLower");
+    var contains = Callee("Contains");
+    var containsKey = new MethodReference("ContainsKey", mod.TypeSystem.Boolean, getItem.DeclaringType) { HasThis = true };
+    containsKey.Parameters.Add(new ParameterDefinition(getItem.Parameters[0].ParameterType));
+
+    var init = main.Methods.First(m => m.Name == "Init");
+    var ins = init.Body.Instructions;
+    var tabs = new List<Instruction>();
+    MethodReference? actionCtor = null;
+    for (int i = 0; i < ins.Count; i++)
+    {
+        if (!IsLdcI4(ins[i], 9)) continue;
+        var window = ins.Skip(i + 1).Take(9).ToList();
+        if (!window.Any(x => x.OpCode == OpCodes.Ldftn && x.Operand is MethodReference mr && mr.Name == "GripSwitch")) continue;
+        actionCtor ??= (MethodReference)window.First(x => x.OpCode == OpCodes.Newobj).Operand;
+        tabs.Add(ins[i]);
+    }
+    if (tabs.Count != 3 || actionCtor == null) throw new Exception($"expected 3 Tab registrations of GripSwitch, found {tabs.Count}");
+    foreach (var t in tabs) { t.OpCode = OpCodes.Ldc_I4_0; t.Operand = null; } // Key.None
+    {
+        var il = init.Body.GetILProcessor();
+        var at = tabs[0];
+        // jump targets that pointed at the first registration must run the new code first
+        var head = il.Create(OpCodes.Ldsfld, config);
+        foreach (var x in ins) if (x.Operand == at) x.Operand = head;
+        foreach (var h in init.Body.ExceptionHandlers) { if (h.TryStart == at) h.TryStart = head; if (h.HandlerStart == at) h.HandlerStart = head; }
+        il.InsertBefore(at, head);
+        il.InsertBefore(at, il.Create(OpCodes.Ldstr, cfgKey));
+        il.InsertBefore(at, il.Create(OpCodes.Callvirt, containsKey));
+        il.InsertBefore(at, il.Create(OpCodes.Brfalse, at));
+        il.InsertBefore(at, il.Create(OpCodes.Ldstr, cfgKey));
+        il.InsertBefore(at, il.Create(OpCodes.Ldnull));
+        il.InsertBefore(at, il.Create(OpCodes.Ldftn, gs));
+        il.InsertBefore(at, il.Create(OpCodes.Newobj, actionCtor));
+        il.InsertBefore(at, il.Create(OpCodes.Call, agk));
+    }
+    {
+        var il = gs.Body.GetILProcessor();
+        var first = gs.Body.Instructions[0];
+        var ret = il.Create(OpCodes.Ret);
+        il.InsertBefore(first, il.Create(OpCodes.Ldsfld, spear));
+        il.InsertBefore(first, il.Create(OpCodes.Brtrue, first));
+        il.InsertBefore(first, il.Create(OpCodes.Ldsfld, config));
+        il.InsertBefore(first, il.Create(OpCodes.Ldstr, cfgKey));
+        il.InsertBefore(first, il.Create(OpCodes.Callvirt, containsKey));
+        il.InsertBefore(first, il.Create(OpCodes.Brfalse, ret));
+        il.InsertBefore(first, il.Create(OpCodes.Ldsfld, config));
+        il.InsertBefore(first, il.Create(OpCodes.Ldstr, cfgKey));
+        il.InsertBefore(first, il.Create(OpCodes.Callvirt, getItem));
+        il.InsertBefore(first, il.Create(OpCodes.Callvirt, toLower));
+        il.InsertBefore(first, il.Create(OpCodes.Ldstr, "none"));
+        il.InsertBefore(first, il.Create(OpCodes.Callvirt, contains));
+        il.InsertBefore(first, il.Create(OpCodes.Brfalse, first));
+        il.InsertBefore(first, ret);
+    }
+    Console.WriteLine("[11] Grip switch moved from hard-coded Tab to gripSwitchKey in the config (missing or None = off)");
+    applied++;
+}
+
 // ---- 6. marker so the tool can tell a patched DLL without the .orig --------
 {
     const string marker = "TransmogTool-patched";

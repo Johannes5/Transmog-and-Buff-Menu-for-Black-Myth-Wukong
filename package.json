@@ -1,6 +1,6 @@
 {
   "name": "wukong-transmog",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Transmog & Buff Tool for Black Myth: Wukong - looks, set bonuses, weapon effects and values by name",
   "main": "src/cli.js",
   "scripts": {

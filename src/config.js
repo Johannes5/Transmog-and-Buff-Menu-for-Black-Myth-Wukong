@@ -27,6 +27,10 @@ export const ATTR_KEY = 'keeperAttr';
 export const OUTFITS_KEY = 'keeperOutfits';   // "Name=id,id;Other name=id,id"  saved looks (TransmogKeeper v1.5+ cycles them)
 export const HOTKEY_KEY = 'keeperOutfitKey';  // "F7", "Ctrl+F7", "None"        key that puts on the next saved look in game
 export const DEFAULT_HOTKEY = 'F7';           // used when the line is missing (F7 is free: the patcher unbinds the mod's F4-F9 debug keys)
+export const STANCE_KEY = 'keeperStanceKey';   // TransmogKeeper v1.8+: key that switches to the next unlocked stance; missing or None = off
+export const STANCE_COMMENT = "TransmogKeeper only: key that switches to the next stance in game (Smash > Pillar > Thrust), e.g. TAB or Ctrl+F6 (None = off)";
+export const GRIP_KEY = 'gripSwitchKey';     // patched TrueWukong.dll only: single key that toggles the staff/spear grip; missing or None = off (the unpatched mod hard-binds Tab)
+export const GRIP_COMMENT = "key that toggles between the staff grip and the mod's spear grip (other light combo), e.g. TAB or G; None = off (needs a game restart)";
 export const BACKUPS_KEPT = 30;
 
 /** Config number back to a readable one: "12E-1" -> "1.2". */
@@ -102,6 +106,12 @@ export function normalizeHotkey(text) {
   return [...mods, key].join('+');
 }
 
+/** The mod binds one plain key (it fires with or without Ctrl/Shift/Alt held), so no modifiers here. Returns null when invalid. */
+export function normalizeSingleKey(text) {
+  const key = normalizeHotkey(text);
+  return key && !key.includes('+') ? key : null;
+}
+
 export function readConfig(file) {
   const raw = fs.readFileSync(file, 'utf8');
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
@@ -124,6 +134,8 @@ export function readConfig(file) {
     recentValues: parseRecentValues(values[RECENT_VALUES_KEY]),
     attrs: parseAttrLine(values[ATTR_KEY]),
     saved: parseOutfits(values[OUTFITS_KEY]),
+    stanceKey: !values[STANCE_KEY] || /^(none|0)$/i.test(values[STANCE_KEY]) ? 'None' : values[STANCE_KEY],
+    gripKey: !values[GRIP_KEY] || /none/i.test(values[GRIP_KEY]) ? 'None' : values[GRIP_KEY],
     hotkey: values[HOTKEY_KEY] === undefined || values[HOTKEY_KEY] === '' ? DEFAULT_HOTKEY : values[HOTKEY_KEY] === '0' ? 'None' : values[HOTKEY_KEY],
   };
 }
@@ -132,7 +144,7 @@ export function readConfig(file) {
  * Write the tool's lines. `outfits` = { staff?: ids, spear?: ids }; the options replace the other
  * lines when given. A dated backup is written first (unless backup = false) and old backups pruned.
  */
-export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs, values, recentValues, attrs, saved, hotkey, presets, skipRecent = [] } = {}) {
+export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs, values, recentValues, attrs, saved, hotkey, presets, gripKey, stanceKey, skipRecent = [] } = {}) {
   // Buffs that leave the active list are remembered as "recently active" (newest first, capped).
   let recent;
   if (talents || soaks || buffs) {
@@ -171,6 +183,8 @@ export function writeConfig(cfg, outfits, { backup = true, talents, soaks, buffs
   if (attrs) setLine(ATTR_KEY, formatAttrLine(attrs), 'TransmogKeeper only: attribute overrides "Name:value,Name:value" (see wukong-transmog values attr)');
   if (saved) setLine(OUTFITS_KEY, formatOutfits(saved), 'TransmogKeeper only: saved looks "Name=ids;Name=ids" (see wukong-transmog outfits)');
   if (hotkey) setLine(HOTKEY_KEY, hotkey, 'TransmogKeeper only: key that puts on the next saved look in game, e.g. F7 or Ctrl+F7 (None = off); Shift + it shows the real gear');
+  if (gripKey) setLine(GRIP_KEY, gripKey, GRIP_COMMENT);
+  if (stanceKey) setLine(STANCE_KEY, stanceKey, STANCE_COMMENT);
   if (backup) backupConfig(cfg.file);
   fs.writeFileSync(cfg.file, lines.join(fresh.eol), 'utf8');
   Object.assign(cfg, readConfig(cfg.file));

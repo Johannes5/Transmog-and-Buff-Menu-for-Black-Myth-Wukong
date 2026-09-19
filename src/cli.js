@@ -13,6 +13,8 @@
 //   wukong-transmog values ...       regen, speed, multipliers, attribute locks
 //   wukong-transmog doctor           check the install and the logs
 //   wukong-transmog mod full|lite|off switch mod mode (lite = trainer-friendly)
+//   wukong-transmog stance-key [key]  key that switches to the next stance (none = off)
+//   wukong-transmog grip-key [key]    key that toggles the mod's spear grip (none = off)
 //   options: --config <path>  --all-tiers  --grip staff|spear|both  --no-backup
 
 import fs from 'node:fs';
@@ -24,7 +26,7 @@ import { VALUES, VALUE_GROUPS, ATTRS, valueByKey, attrByName, formatAttrLine, re
 import { hasPayload, installInto, uninstallFrom, findGameDirs, isGameDir, isInstalled, needsUpdate, payloadVersion, gameRunning, gameExeStamp } from './install.js';
 import { readSettings, writeSettings } from './settings.js';
 import {
-  CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, validOutfitName,
+  CONFIG_REL, KEYS, TALENT_KEY, readConfig, writeConfig, configNumber, showNumber, listBackups, restoreBackup, normalizeHotkey, normalizeSingleKey, validOutfitName,
 } from './config.js';
 import { resolveItem, resolveSet, resolveTalent, resolveOutfit } from './resolve.js';
 import { DEFAULT_PRESETS, migratePresets, presetActive, presetChange, presetFromCurrent, describePreset, presetText, cleanDesc, validPresetName, coveredByActivePresets } from './presets.js';
@@ -1099,10 +1101,12 @@ async function interactive(cfg, opts) {
       const paused = st.mode === 'off';
       const pick = await select({
         message: 'Options',
-        pageSize: 10,
+        pageSize: 12,
         choices: [
           { name: '- back', value: '__back__' },
           { name: `Trainer compatibility   ${trainer ? 'ON' : 'off'}   (turn on if WeMod/FLiNG/Cheat Engine cannot attach)`, value: 'trainer', description: 'Runs the in-game mod without hooks. Looks and buffs still apply within a second; attack/defense multipliers and the cooldown timers are unavailable. Needs the game closed to switch.' },
+          { name: `Stance cycle shortcut   ${cfg.stanceKey === 'None' ? 'off' : cfg.stanceKey}${keeperInstalled(cfg.file) ? '' : '   (needs the keeper, see Doctor)'}`, value: 'stance', description: 'Not in the base game: one key that switches to the next stance, Smash > Pillar > Thrust > Smash (stances you have not unlocked are skipped). Off = no key does this. Examples: TAB, H, Ctrl+F6, XBUTTON1. Picked up in game within a second.' },
+          { name: `Spear grip shortcut     ${cfg.gripKey === 'None' ? 'off' : cfg.gripKey}`, value: 'grip', description: "A shortcut of the underlying True Wukong mod: the key toggles between the normal staff grip and the mod's spear grip (sparks fly, the light attack combo changes). It does not cycle Smash/Pillar/Thrust. Off = no key does this. Set any single key, e.g. TAB, G or XBUTTON1 (mouse side button). Applies at the next game start." },
           { name: `Pause the mod           ${paused ? 'PAUSED (the game starts without the mod)' : 'off'}`, value: 'pause', description: 'Switches the mod loader off, so the game starts completely unmodded: no looks, no buffs, nothing loaded. Use it when a trainer or another tool misbehaves with the mod. Your config and saved looks stay; unpause to get everything back. Needs the game closed to switch.' },
           { name: `Game folder             ${gameDirOf(cfg.file)}`, value: 'folder', description: 'Change which game installation the tool works on, or reinstall the in-game part there. The choice is remembered in settings.json next to the tool.' },
           { name: `Status                  mod ${st.mode}, keeper ${st.keeper ? 'installed' : 'not installed'}, last log lines`, value: 'status' },
@@ -1110,6 +1114,26 @@ async function interactive(cfg, opts) {
         ],
       });
       if (pick === '__back__') return;
+      if (pick === 'stance') {
+        const answer = await ask('Key that switches to the next stance (e.g. TAB, H, Ctrl+F6; "none" = off)', cfg.stanceKey);
+        if (answer === null) continue;
+        const key = normalizeHotkey(answer);
+        if (!key) { console.log('  Not a key the game understands. Examples: TAB, H, Ctrl+F6, NUMPAD1. Full list in TrueWukong-KeybindList.txt next to the config.\n'); continue; }
+        writeConfig(cfg, {}, { stanceKey: key });
+        console.log(`  Stance cycle shortcut: ${key === 'None' ? 'off' : key} (picked up in game within a second).\n`);
+        continue;
+      }
+      if (pick === 'grip') {
+        const answer = await ask('Key that toggles the spear grip (e.g. TAB, G, XBUTTON1; "none" = off)', cfg.gripKey);
+        if (answer === null) continue;
+        const key = normalizeSingleKey(answer);
+        if (!key) { console.log(`  "${answer}" is not a key name. Use one key without modifiers, e.g. TAB, G, NUMPAD1.
+`); continue; }
+        writeConfig(cfg, {}, { gripKey: key });
+        console.log(`  Spear grip shortcut: ${key === 'None' ? 'off' : key} (applies at the next game start).
+`);
+        continue;
+      }
       if (pick === 'pause') {
         if (gameRunning()) { console.log('  Close the game first, then switch this.\n'); continue; }
         cmdMod(cfg, { _: ['mod', paused ? (readJit(p.ini) ? 'full' : 'lite') : 'off'] });
@@ -1223,7 +1247,29 @@ const HELP = `Transmog & Buff Tool ${VERSION}  (wukong-transmog)
   wukong-transmog install [game dir]   copy the bundled in-game part into the game folder
   wukong-transmog uninstall [--yes]    remove it again (restores replaced files)
   wukong-transmog mod status|full|lite|off   trainer compatibility = lite; off = vanilla
+  wukong-transmog stance-key [key|none]  key for the next stance, Smash > Pillar > Thrust (none = off)
+  wukong-transmog grip-key [key|none]  key that toggles the mod's spear grip (none = off)
   global: --config <TrueWukongConfig.txt>  --all-tiers  --no-backup`;
+
+function cmdStanceKey(cfg, opts) {
+  const want = opts._[1];
+  if (want !== undefined) {
+    const key = normalizeHotkey(want);
+    if (!key) throw new Error(`"${want}" is not a key name (e.g. TAB, H, Ctrl+F6; none = off)`);
+    writeConfig(cfg, {}, { backup: !opts['no-backup'], stanceKey: key });
+  }
+  console.log(`Stance cycle shortcut: ${cfg.stanceKey === 'None' ? 'off' : cfg.stanceKey}${want !== undefined ? '   (picked up in game within a second)' : ''}`);
+}
+
+function cmdGripKey(cfg, opts) {
+  const want = opts._[1];
+  if (want !== undefined) {
+    const key = normalizeSingleKey(want);
+    if (!key) throw new Error(`"${want}" is not a key name (one key without modifiers, e.g. TAB, G, XBUTTON1; none = off)`);
+    writeConfig(cfg, {}, { backup: !opts['no-backup'], gripKey: key });
+  }
+  console.log(`Spear grip shortcut: ${cfg.gripKey === 'None' ? 'off' : cfg.gripKey}${want !== undefined ? '   (applies at the next game start)' : ''}`);
+}
 
 // ---------- first-run install of the in-game part ----------
 
@@ -1351,6 +1397,8 @@ async function main() {
   if (cmd === 'show') return cmdShow(cfg);
   if (cmd === 'set') return cmdSet(cfg, opts);
   if (cmd === 'mod') return cmdMod(cfg, opts);
+  if (cmd === 'stance-key') return cmdStanceKey(cfg, opts);
+  if (cmd === 'grip-key') return cmdGripKey(cfg, opts);
   if (cmd === 'buffs' || cmd === 'talents') return cmdTalents(cfg, opts);
   if (cmd === 'values') return cmdValues(cfg, opts);
   if (cmd === 'undo') return cmdUndo(cfg, opts);

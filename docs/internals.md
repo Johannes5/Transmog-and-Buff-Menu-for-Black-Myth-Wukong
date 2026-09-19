@@ -229,7 +229,14 @@ matching pieces; the game only checks the talent itself.
    perform a skill after perfect dodges, see-throughs or chords.
 8. The `ScanBuffWhenCast` prefix (reactions to player buffs: extra buffs, projectiles, Sage helpers)
    always runs the original and does nothing else.
-9. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
+9. Focus gained while charging a heavy attack stops at the gauge's maximum (no flicker, no stuttering sound).
+10. The grip switch has a configurable key. True Wukong hard-binds Tab (also with Shift/Ctrl, plus a
+   controller chord) to swapping the staff moveset for its spear moveset. The Tab bindings are removed;
+   `gripSwitchKey` in the config names the key instead (one key from `TrueWukong-KeybindList.txt`;
+   `None` or a missing line = off, which also switches the controller chord off). Set it with
+   `wukong-transmog grip-key TAB|none` or Options > Spear grip shortcut; like the mod's other
+   keybinds it is read at game start.
+11. A string constant `TrueWukong.TransmogToolPatch = "TransmogTool-patched"` is added. The tool
    looks for it (UTF-16 in the DLL) to know the DLL is patched; the release ships no `.orig`.
 
 Run it with `npm run patch-mod` (needs the .NET 8 SDK). If the game is running the DLL is
@@ -249,7 +256,7 @@ wukong-transmog mod off      # loader disabled (version.dll renamed): pure vanil
 ```
 
 Lite mode needs the patched DLL. In lite mode nothing applies automatically: after loading a save
-(and after every respawn) press Ctrl+Enter once to put the look on. Tab still switches grips.
+(and after every respawn) press Ctrl+Enter once to put the look on. The `gripSwitchKey`, if set, still switches grips.
 
 ## TransmogKeeper (auto re-apply, no hotkey)
 
@@ -262,6 +269,12 @@ so it works in lite mode and covers game start, fast travel, death, cutscenes an
 npm run fetch-refs       # once: download the game's managed reference DLLs into keeper/lib
 npm run install-keeper   # build with the .NET 8 SDK and copy into CSharpLoader/Mods/TransmogKeeper
 ```
+
+**Stance cycle key** (keeper v1.8+): `keeperStanceKey = TAB` (or `Ctrl+F6`, `None`; missing = off) switches to
+the next unlocked stance, Smash > Pillar > Thrust. The keeper does what the game's own stance keys do
+(`BUIASwitchWeaponPoseBase`): it checks `BGUIsCanReceiveBattleInput` and the stance's talent, then raises
+`Evt_SwitchWeaponPoseByType`. Set it with `wukong-transmog stance-key <key>` or Options > Stance cycle shortcut.
+It is unrelated to True Wukong's spear grip (`gripSwitchKey`, see the patcher list).
 
 Log: `b1\Binaries\Win64\TransmogKeeperLog.txt`. It follows `staffTransmog` only, so keep both grips
 identical (the CLI always writes both).
